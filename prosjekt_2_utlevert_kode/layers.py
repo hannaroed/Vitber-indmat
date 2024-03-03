@@ -50,8 +50,7 @@ class Attention(Layer):
     def forward(self,x):
         self.x = x
         n = len(x)
-        m = len(W_k[0])
-        D = np.zeros((m, n))
+        D = np.zeros((n, n))
         i1,i2 = np.tril_indices(n,-1)
         D[i1,i2] -= np.inf
         A = Softmax.forward(np.transpose(x)@np.transpose(W_q)@W_k@x + D)
@@ -61,9 +60,8 @@ class Attention(Layer):
 
 
     def backward(self,grad):
-        """
-        Your code here
-        """
+        self.grad = grad
+        
         return
     
 
