@@ -39,7 +39,7 @@ class Layer:
 
 class Attention(Layer):
 
-    def __init__(self,your_arguments_here):
+    def __init__(self, W_o, W_v, W_q, W_k):
         """
         Your code here
         """
@@ -48,10 +48,16 @@ class Attention(Layer):
         
 
     def forward(self,x):
-        """
-        Your code here
-        """
-        return
+        self.x = x
+        n = len(x)
+        m = len(W_k[0])
+        D = np.zeros((m, n))
+        i1,i2 = np.tril_indices(n,-1)
+        D[i1,i2] -= np.inf
+        A = Softmax.forward(np.transpose(x)@np.transpose(W_q)@W_k@x + D)
+        x_l = x + np.transpose(W_o)@W_v@x@A
+
+        return x_l
 
 
     def backward(self,grad):
@@ -65,24 +71,28 @@ class Attention(Layer):
 class Softmax(Layer):
 
     def __init__(self,your_arguments_here):
-        """
-        Your code here
-        """
+
         return
 
     
     def forward(self,x):
-        """
-        Your code here
-        """
-        return
+        self.x = x
+        epsilon = 10e-8 
+        P = np.exp(x - x.max(axis=0, keepdims=True))
+        Q = np.sum(P, axis=0, keepdims=True)
+        Q += epsilon
+        x_l = np.divide(P, Q)
+
+        return x_l
 
 
     def backward(self,grad):
-        """
-        Your code here
-        """
-        return
+        self.grad = grad
+        x_l = self.forward()
+        S = np.divide(self.P,(np.multiply(self.Q, self.Q + self.epsilon)))
+        dL_dx = np.multiply(grad, x_l) - (np.multiply(np.sum(np.multiply(grad, S), axis=0, keepdims=True), self.P))
+        
+        return dL_dx
 
 
 
@@ -97,17 +107,22 @@ class CrossEntropy(Layer):
         
 
     def forward(self,x):
-        """
-        Your code here
-        """
-        return
+
+        self.x = x
+        m = np.max(x)
+        matrix1 = np.transpose(np.ones(m))
+        x_one_hot = self.onehot(x,m)
+        p = matrix1 * np.multiply(???hjælp???, x_one_hot)
+        q = -np.log(p)
+        
+        return 
 
 
     def backward(self):
-        """
-        Your code here
-        """
-        return
+        self.forward()
+        n = len(x)
+        L = -1/n * (np.divide(self.x_one_hot, ?? + 10e-18))
+        return L
     
 
 
