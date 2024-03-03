@@ -1,6 +1,6 @@
 from layers import *
 
-class NeuralNetwork():
+class NeuralNetwork:
     """
     Neural network class that takes a list of layers
     and performs forward and backward pass, as well

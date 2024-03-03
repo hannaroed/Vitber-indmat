@@ -1,3 +1,4 @@
+import functools
 import numpy as np
 from utils import onehot
 
@@ -37,94 +38,125 @@ class Layer:
 
 
 
+@functools.lru_cache(maxsize=None)
+def make_D_matrix(n):
+    D = np.zeros((n, n))
+    i1, i2 = np.tril_indices(n, -1)
+    D[i1,i2] -= np.inf
+    return D[None, :, :]
+
 class Attention(Layer):
 
-    def __init__(self, W_o, W_v, W_q, W_k):
-        self.W_o = W_o
-        self.W_v = W_v
-        self.W_q = W_q
-        self.W_k = W_k
+    def __init__(self, d, k):
+        self.W_q = LinearLayer(d, k, init_scale=0.1)
+        self.W_k = LinearLayer(d, k, init_scale=0.1)
+        self.W_v = LinearLayer(d, k, init_scale=0.1)
+        self.W_o = LinearLayer(k, d, init_scale=0.1)
         self.softmax = Softmax()
 
-        return
 
+    def forward(self, z):
+        b, d, n = z.shape
+        D = make_D_matrix(n)
+
+        Q = self.W_q.forward(z)  # (b, k, n)
+        K = self.W_k.forward(z)  # (b, k, n)
+        V = self.W_v.forward(z)  # (b, k, n)
+
+        # (b, n, k) @ (b, k, n) = (b, n-query, n-key)
+        qk_prod = Q.T @ K / np.sqrt(d)  # Scaled dot product attention
+
+        A = self.softmax.forward(qk_prod + D)  # Add masking and softmax
+
+        V = self.W_v.forward(z)
+
+        VA = V @ A # (b, k, n) @ (b, n, n) = (b, k, n)
+
+        out = self.W_o.forward(VA)
+
+        return out
+
+
+    def backward(self, grad):
+        d_VA = self.W_o.backward(grad)  # (b, k, n)
         
 
-    def forward(self,x):
-        self.x = x
-        n = len(x)
-        D = np.zeros((n, n))
-        i1,i2 = np.tril_indices(n,-1)
-        D[i1,i2] -= np.inf
-        A = self.softmax.forward(np.transpose(z) @ np.transpose(self.W_q) @ self.W_k @ z + D)
-        z_l = z + np.transpose(self.W_o) @ self.W_v @ x @ A
-
-        return z_l
-
-
-    def backward(self,grad):
-        self.grad = grad
-        
-        return
+    
+    def step_gd(self, alpha):
+        self.l1.step_gd(alpha)
+        self.l2.step_gd(alpha)
     
 
 
 class Softmax(Layer):
 
-    def __init__(self,your_arguments_here):
+    def __init__(self, epsilon: float = 10e-8):
+        self.epsilon = epsilon
 
-        return
-
+        self.prev_Q: np.ndarray | None = None
+        self.prev_P: np.ndarray | None = None
+        self.z_l: np.ndarray | None = None
+        # self.grad: np.ndarray | None = None
     
-    def forward(self,x):
+    def forward(self, x):
+        # x: (batch, d, n)
+
+        """Columnwise softmax operation"""
         self.x = x
-        epsilon = 10e-8 
+
         P = np.exp(x - x.max(axis=0, keepdims=True))
         Q = np.sum(P, axis=0, keepdims=True)
-        Q += epsilon
-        z_l = np.divide(P, Q)
+
+        z_l = P / (Q + self.epsilon)
+
+        self.prev_P = P
+        self.prev_Q = Q
+        self.z_l = z_l
 
         return z_l
 
 
-    def backward(self,grad):
-        self.grad = grad
-        z_l = self.forward(self.x)
-        S = np.divide(self.P,(np.multiply(self.Q, self.Q + self.epsilon)))
-        dL_dz = np.multiply(grad, z_l) - (np.multiply(np.sum(np.multiply(grad, S), axis=0, keepdims=True), self.P))
+    def backward(self, grad):
+        assert self.prev_Q is not None and self.prev_P is not None, 'Must have done a forward pass'
+        # self.grad = grad
+
+        P, Q, z_l = self.prev_P, self.prev_Q, self.z_l
+        
+        S = P / (Q * Q + self.epsilon)
+
+        dL_dz = grad * z_l - np.sum(grad * S, axis=0, keepdims=True) * P
         
         return dL_dz
 
 
-
 class CrossEntropy(Layer):
 
-    def __init__(self,your_arguments_here):
-        """
-        Your code here
-        """
-        return
-
+    def __init__(self, epsilon = 10e-18):
+        self.epsilon = epsilon
+        self.prev_y_pred: np.ndarray | None = None
+        self.prev_y: int | None = None
         
 
-    def forward(self,x):
+    def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
+        """Cross entropy definition in assignment is wrong"""
+        # y_pred: (batch, d, n)
+        # y_true: (batch, d)
+        # d = embedding dimension = number of classes
+        self.prev_y_pred = y_pred
+        self.prev_y = y_true
 
-        self.x = x
-        m = np.max(x)
-        matrix1 = np.transpose(np.ones(m))
-        x_one_hot = self.onehot(x,m)
-        p = matrix1 * np.multiply(???hjælp???, x_one_hot)
-        q = -np.log(p)
-        loss = np.sum(q)/n
-        
-        return 
+        # out: (batch, n)
 
+        return -np.log(y_pred[:, y_true, :] + self.epsilon)
 
     def backward(self):
-        self.forward()
-        n = len(x)
-        L = -1/n * (np.divide(self.x_one_hot, ?? + 10e-18))
-        return L
+        out = np.zeros_like(self.prev_y_pred)
+
+        hot = 1 / self.prev_y_pred[:, self.prev_y, :]
+
+        out[:, self.prev_y, :] = -hot
+
+        return out
     
 
 
@@ -146,7 +178,7 @@ class LinearLayer(Layer):
                             'd':np.zeros_like(self.w)}}
         
 
-    def forward(self,x):
+    def forward(self, x):
         """
         Computes the affine transformation of the forward pass
         Stores input for backwards pass and returns output y = Wx.
@@ -159,10 +191,10 @@ class LinearLayer(Layer):
         
         #Return output of layer
         #y = w@x
-        y = np.einsum('od,bdn->bon',self.params['w']['w'],x)
+        y = np.einsum('od,bdn->bon', self.params['w']['w'], x)
         return y
         
-    def backward(self,grad):
+    def backward(self, grad):
         """
         Performs backward pass.
 
@@ -173,11 +205,11 @@ class LinearLayer(Layer):
 
         #Compute gradient (average over B batches) of loss wrt weight w: 
         #dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
-        self.params['w']['d'] = np.einsum('bon,bdn->od',grad,self.x)/b
+        self.params['w']['d'] = np.einsum('bon,bdn->od', grad, self.x) / b
 
         #Return gradient of loss wrt input of layer
         #dL/dw = w@grad.T
-        return np.einsum('od,bon->bdn',self.params['w']['w'],grad)
+        return np.einsum('od,bon->bdn', self.params['w']['w'], grad)
     
 
 class Relu(Layer):
@@ -204,7 +236,6 @@ class Relu(Layer):
         return grad * np.where(self.x > 0, np.ones_like(self.x), np.zeros_like(self.x))
 
 
-
 class EmbedPosition(Layer):
     def __init__(self,n_max,m,d,init_scale=1e-1):   
 
@@ -222,7 +253,7 @@ class EmbedPosition(Layer):
         #Initialize the parameter dictionary for weight with key "Wp"
         self.params = {"Wp":{'w':self.w,'d':None}}
 
-    def forward(self,X):
+    def forward(self, X):
 
         """
         Input:
@@ -246,7 +277,7 @@ class EmbedPosition(Layer):
         z_0 = self.embed.forward(X) + self.params['Wp']['w'][:,:n]
         return z_0
     
-    def backward(self,grad):
+    def backward(self, grad):
         """
         Input:
             - grad of shape (b,d,n)
@@ -282,8 +313,6 @@ class EmbedPosition(Layer):
 
 
 class FeedForward(Layer):
-
-
     def __init__(self,d, p,init_scale = 0.1):
         """
         Input:
