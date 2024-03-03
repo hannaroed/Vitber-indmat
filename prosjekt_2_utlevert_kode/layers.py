@@ -40,9 +40,12 @@ class Layer:
 class Attention(Layer):
 
     def __init__(self, W_o, W_v, W_q, W_k):
-        """
-        Your code here
-        """
+        self.W_o = W_o
+        self.W_v = W_v
+        self.W_q = W_q
+        self.W_k = W_k
+        self.softmax = Softmax()
+
         return
 
         
@@ -53,10 +56,10 @@ class Attention(Layer):
         D = np.zeros((n, n))
         i1,i2 = np.tril_indices(n,-1)
         D[i1,i2] -= np.inf
-        A = Softmax.forward(np.transpose(x)@np.transpose(W_q)@W_k@x + D)
-        x_l = x + np.transpose(W_o)@W_v@x@A
+        A = self.softmax.forward(np.transpose(z) @ np.transpose(self.W_q) @ self.W_k @ z + D)
+        z_l = z + np.transpose(self.W_o) @ self.W_v @ x @ A
 
-        return x_l
+        return z_l
 
 
     def backward(self,grad):
@@ -79,18 +82,18 @@ class Softmax(Layer):
         P = np.exp(x - x.max(axis=0, keepdims=True))
         Q = np.sum(P, axis=0, keepdims=True)
         Q += epsilon
-        x_l = np.divide(P, Q)
+        z_l = np.divide(P, Q)
 
-        return x_l
+        return z_l
 
 
     def backward(self,grad):
         self.grad = grad
-        x_l = self.forward()
+        z_l = self.forward(self.x)
         S = np.divide(self.P,(np.multiply(self.Q, self.Q + self.epsilon)))
-        dL_dx = np.multiply(grad, x_l) - (np.multiply(np.sum(np.multiply(grad, S), axis=0, keepdims=True), self.P))
+        dL_dz = np.multiply(grad, z_l) - (np.multiply(np.sum(np.multiply(grad, S), axis=0, keepdims=True), self.P))
         
-        return dL_dx
+        return dL_dz
 
 
 
@@ -112,6 +115,7 @@ class CrossEntropy(Layer):
         x_one_hot = self.onehot(x,m)
         p = matrix1 * np.multiply(???hjælp???, x_one_hot)
         q = -np.log(p)
+        loss = np.sum(q)/n
         
         return 
 
