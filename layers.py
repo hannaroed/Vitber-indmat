@@ -17,7 +17,7 @@ class Layer:
     def backward(self,grad):
         raise NotImplementedError
     
-    def step_gd(self,alpha):
+    def step_gd(self,alpha): 
         """
         Performs a gradient descent step given learning rate.
         Assumes that the layer has a parameter dictionary "params" on the form
@@ -34,6 +34,13 @@ class Layer:
         """
         for param in self.params:
             self.params[param]['w'] -= alpha*self.params[param]['d']
+
+    def adam(self, alpha):
+        for param in self.params:
+            self.params[param]['w'] -= alpha*self.params[param]['d']
+
+        for i in range(n):
+            grad = 
 
 
 
