@@ -17,13 +17,13 @@ class Layer:
     def backward(self,grad):
         raise NotImplementedError
     
-    def step_gd(self,alpha): 
+    def step_gd(self, alpha): 
         """
         Performs a gradient descent step given learning rate.
         Assumes that the layer has a parameter dictionary "params" on the form
 
         params = {
-            'w1': {         
+            'w1': {
                 'w': w,         The parameter matrix
                 'd': d,         The gradient of loss wrt the parameter matrix
                 },
@@ -52,32 +52,77 @@ def make_D_matrix(n):
     D[i1,i2] -= np.inf
     return D[None, :, :]
 
+
+class Matmul(Layer):
+    def __init__(self):
+        self.prev_A: np.ndarray | None = None
+        self.prev_B: np.ndarray | None = None
+    
+    def forward(self, A, B):
+        return A @ B
+    
+    def backward(self, dL_dAB):
+        dL_dA = dL_dAB @ self.prev_B.T
+        dL_dB = self.prev_A.T @ dL_dAB
+        return dL_dA, dL_dB
+
+
 class Attention(Layer):
+    def __init__(self):
+        self.softmax = Softmax()
+        self.matmul1 = Matmul()
+        self.matmul2 = Matmul()
+
+    def forward(self, Q, K, V):
+        b, d, n = Q.shape
+        D = make_D_matrix(n)
+
+        qk_prod = self.matmul1.forward(Q.T, K) / np.sqrt(d)
+
+        A = self.softmax.forward(qk_prod + D)
+
+        VA = self.matmul2.forward(V, A)
+
+        return VA
+    
+    def backward(self, dL_dVA):
+        dL_dV, dL_dA = self.matmul2.backward(dL_dVA)
+
+        dL_dqk_prod = self.softmax.backward(dL_dA)
+
+        dL_dQ, dL_dK = self.matmul1.backward(dL_dqk_prod)
+        b, k, n = dL_dQ.shape
+
+        dL_dQ /= np.sqrt(k)
+        dL_dK /= np.sqrt(k)
+
+        return dL_dQ, dL_dK, dL_dV
+
+
+class SelfAttention(Layer):
 
     def __init__(self, d, k):
         self.W_q = LinearLayer(d, k, init_scale=0.1)
         self.W_k = LinearLayer(d, k, init_scale=0.1)
         self.W_v = LinearLayer(d, k, init_scale=0.1)
         self.W_o = LinearLayer(k, d, init_scale=0.1)
+
+        self.prev_A: np.ndarray | None = None
+
         self.softmax = Softmax()
+
+        self.attention = Attention()
 
 
     def forward(self, z):
-        b, d, n = z.shape
+        b, k, n = z.shape
         D = make_D_matrix(n)
 
         Q = self.W_q.forward(z)  # (b, k, n)
         K = self.W_k.forward(z)  # (b, k, n)
         V = self.W_v.forward(z)  # (b, k, n)
 
-        # (b, n, k) @ (b, k, n) = (b, n-query, n-key)
-        qk_prod = Q.T @ K / np.sqrt(d)  # Scaled dot product attention
-
-        A = self.softmax.forward(qk_prod + D)  # Add masking and softmax
-
-        V = self.W_v.forward(z)
-
-        VA = V @ A # (b, k, n) @ (b, n, n) = (b, k, n)
+        VA = self.attention.forward(Q, K, V)
 
         out = self.W_o.forward(VA)
 
@@ -85,13 +130,16 @@ class Attention(Layer):
 
 
     def backward(self, grad):
-        d_VA = self.W_o.backward(grad)  # (b, k, n)
-        
-
+        dL_dVA = self.W_o.backward(grad)  # (b, k, n)
+        dL_dQ, dL_dK, dL_dV = self.attention.backward(dL_dVA)  # each (b, k, n)
+        dL_dz = self.W_q.backward(dL_dQ) + self.W_k.backward(dL_dK) + self.W_v.backward(dL_dV)
+        return dL_dz
     
     def step_gd(self, alpha):
-        self.l1.step_gd(alpha)
-        self.l2.step_gd(alpha)
+        self.W_q.step_gd(alpha)
+        self.W_k.step_gd(alpha)
+        self.W_v.step_gd(alpha)
+        self.W_o.step_gd(alpha)
     
 
 
@@ -102,8 +150,7 @@ class Softmax(Layer):
 
         self.prev_Q: np.ndarray | None = None
         self.prev_P: np.ndarray | None = None
-        self.z_l: np.ndarray | None = None
-        # self.grad: np.ndarray | None = None
+        self.prev_z_l: np.ndarray | None = None
     
     def forward(self, x):
         # x: (batch, d, n)
@@ -127,7 +174,7 @@ class Softmax(Layer):
         assert self.prev_Q is not None and self.prev_P is not None, 'Must have done a forward pass'
         # self.grad = grad
 
-        P, Q, z_l = self.prev_P, self.prev_Q, self.z_l
+        P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
         
         S = P / (Q * Q + self.epsilon)
 
@@ -258,7 +305,7 @@ class EmbedPosition(Layer):
         self.w = np.random.randn(d,n_max)*init_scale
 
         #Initialize the parameter dictionary for weight with key "Wp"
-        self.params = {"Wp":{'w':self.w,'d':None}}
+        self.params = {"Wp":{'w':self.w, 'd':None}}
 
     def forward(self, X):
 
@@ -327,6 +374,8 @@ class FeedForward(Layer):
             p: output dimension of first and input of second.
 
         """
+
+        self.x: np.ndarray | None = None
 
         #first linear layer with input size d and output size p
         self.l1 = LinearLayer(d,p,init_scale)
