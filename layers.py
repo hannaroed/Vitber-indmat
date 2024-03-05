@@ -1,15 +1,15 @@
+from __future__ import annotations
+from abc import ABC, abstractmethod
 import functools
 import numpy as np
 from utils import onehot
 
 class Layer:
-
     """
     Base class for layers in the neural network with forward and backward pass.
     """
     def __init__(self):
-        
-        return
+        self.params = {}
 
     def forward(self, inputs):
         raise NotImplementedError
@@ -17,7 +17,7 @@ class Layer:
     def backward(self, grad):
         raise NotImplementedError
     
-    def step_gd(self, alpha): 
+    def step_gd(self, optimizer: Optimizer): 
         """
         Performs a gradient descent step given learning rate.
         Assumes that the layer has a parameter dictionary "params" on the form
@@ -26,14 +26,16 @@ class Layer:
             'w1': {
                 'w': w,         The parameter matrix
                 'd': d,         The gradient of loss wrt the parameter matrix
+                'm': m,         The first moment of the gradient
+                'v': v          The second moment of the gradient
                 },
             'w2': {....},
             
         }
         where each parameter has a key 'w' for weights and 'd' for gradients.
         """
-        for param in self.params:
-            self.params[param]['w'] -= alpha*self.params[param]['d']
+        for param in self.params.values():
+            optimizer.update(param)
 
 
 
@@ -51,16 +53,21 @@ class Matmul(Layer):
         self.prev_B: np.ndarray | None = None
     
     def forward(self, A, B):
+        self.prev_A = A
+        self.prev_B = B
         return A @ B
     
     def backward(self, dL_dAB):
-        dL_dA = dL_dAB @ self.prev_B.T
-        dL_dB = self.prev_A.T @ dL_dAB
+        print(dL_dAB.shape, self.prev_B.shape, self.prev_A.shape)
+        dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
+        dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
+        print(dL_dA.shape, dL_dB.shape)
         return dL_dA, dL_dB
 
 
 class Attention(Layer):
     def __init__(self):
+        super().__init__()
         self.softmax = Softmax()
         self.matmul1 = Matmul()
         self.matmul2 = Matmul()
@@ -69,7 +76,8 @@ class Attention(Layer):
         b, d, n = Q.shape
         D = make_D_matrix(n)
 
-        qk_prod = self.matmul1.forward(Q.T, K) / np.sqrt(d)
+        print(Q.shape, K.shape, np.transpose(Q, axes=(0, 2, 1)).shape)
+        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1), K) / np.sqrt(d)
 
         A = self.softmax.forward(qk_prod + D)
 
@@ -83,10 +91,13 @@ class Attention(Layer):
         dL_dqk_prod = self.softmax.backward(dL_dA)
 
         dL_dQ, dL_dK = self.matmul1.backward(dL_dqk_prod)
-        b, k, n = dL_dQ.shape
+        print(dL_dQ.shape)
+        dL_dQ = dL_dQ.transpose(0, 2, 1)
 
-        dL_dQ /= np.sqrt(k)
-        dL_dK /= np.sqrt(k)
+        b, d, n = dL_dQ.shape
+
+        dL_dQ /= np.sqrt(d)
+        dL_dK /= np.sqrt(d)
 
         return dL_dQ, dL_dK, dL_dV
 
@@ -94,6 +105,7 @@ class Attention(Layer):
 class SelfAttention(Layer):
 
     def __init__(self, d, k):
+        super().__init__()
         self.W_q = LinearLayer(d, k, init_scale=0.1)
         self.W_k = LinearLayer(d, k, init_scale=0.1)
         self.W_v = LinearLayer(d, k, init_scale=0.1)
@@ -108,7 +120,6 @@ class SelfAttention(Layer):
 
     def forward(self, z):
         b, k, n = z.shape
-        D = make_D_matrix(n)
 
         Q = self.W_q.forward(z)  # (b, k, n)
         K = self.W_k.forward(z)  # (b, k, n)
@@ -123,8 +134,11 @@ class SelfAttention(Layer):
 
     def backward(self, grad):
         dL_dVA = self.W_o.backward(grad)  # (b, k, n)
+
         dL_dQ, dL_dK, dL_dV = self.attention.backward(dL_dVA)  # each (b, k, n)
+
         dL_dz = self.W_q.backward(dL_dQ) + self.W_k.backward(dL_dK) + self.W_v.backward(dL_dV)
+
         return dL_dz
     
     def step_gd(self, alpha):
@@ -138,6 +152,7 @@ class SelfAttention(Layer):
 class Softmax(Layer):
 
     def __init__(self, epsilon: float = 10e-8):
+        super().__init__()
         self.epsilon = epsilon
 
         self.prev_Q: np.ndarray | None = None
@@ -157,20 +172,22 @@ class Softmax(Layer):
 
         self.prev_P = P
         self.prev_Q = Q
-        self.z_l = z_l
+        self.prev_z_l = z_l
 
         return z_l
 
 
     def backward(self, grad):
-        assert self.prev_Q is not None and self.prev_P is not None, 'Must have done a forward pass'
-        # self.grad = grad
-
         P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
         
         S = P / (Q * Q + self.epsilon)
+        # print(f'{S.shape=}')
+        # print(f'{z_l.shape=}')
+        # print(f'{(grad * S).shape=}')
 
-        dL_dz = grad * z_l - np.sum(grad * S, axis=0, keepdims=True) * P
+        dL_dz = grad * z_l - np.sum(grad * S, axis=1, keepdims=True) * P
+
+        print(f'{dL_dz.shape=}')
         
         return dL_dz
 
@@ -178,6 +195,7 @@ class Softmax(Layer):
 class CrossEntropy(Layer):
 
     def __init__(self, epsilon = 10e-18):
+        super().__init__()
         self.epsilon = epsilon
         self.prev_y_pred: np.ndarray | None = None
         self.prev_y: int | None = None
@@ -202,6 +220,8 @@ class CrossEntropy(Layer):
 
         out[:, self.prev_y, :] = -hot
 
+        print(out.shape)
+
         return out
     
 
@@ -216,12 +236,13 @@ class LinearLayer(Layer):
         Constructor takes input size and output size of layer 
         and scale for the weights
         """
+        super().__init__()
 
         #Initialize weights using a sample from the normal distribution
         #scaled with the init_scale
         self.w = np.random.randn(output_size,input_size)*init_scale
         self.params = {"w":{'w':self.w,
-                            'd':np.zeros_like(self.w)}}
+                            'd':np.zeros_like(self.w), }}
         
 
     def forward(self, x):
@@ -248,6 +269,8 @@ class LinearLayer(Layer):
         """
 
         b = grad.shape[0]
+        print(f'{grad.shape=}')
+        print(f'{self.x.shape=}')
 
         #Compute gradient (average over B batches) of loss wrt weight w: 
         #dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
@@ -258,13 +281,34 @@ class LinearLayer(Layer):
         return np.einsum('od,bon->bdn', self.params['w']['w'], grad)
     
 
+class TransformerBlock(Layer):
+    def __init__(self, d, k, p):
+        super().__init__()
+        self.self_attention = SelfAttention(d=d, k=k)
+        self.feed_forward = FeedForward(d=d, p=p)
+    
+    def forward(self, z):
+        z_l_half = self.self_attention.forward(z) + z
+        z_l = self.feed_forward.forward(z_l_half) # has resnet connection
+        return z_l
+
+    def backward(self, grad):
+        dL_dz_half = self.feed_forward.backward(grad)
+        grad = self.self_attention.backward(dL_dz_half) + dL_dz_half
+        return grad
+    
+    def step_gd(self, optimizer: Optimizer):
+        self.self_attention.step_gd(optimizer)
+        self.feed_forward.step_gd(optimizer)
+
+
 class Relu(Layer):
     """
     Relu activation function
     """
 
     def __init__(self):
-        return
+        super().__init__()
 
     def relu(self,x):
         #relu(x) = max(0,x)
@@ -297,7 +341,7 @@ class EmbedPosition(Layer):
         self.w = np.random.randn(d,n_max) * init_scale
 
         #Initialize the parameter dictionary for weight with key "Wp"
-        self.params = {"Wp":{'w':self.w, 'd':None}}
+        self.params = {"Wp": {'w':self.w, 'd':None}}
 
     def forward(self, X):
 
@@ -319,6 +363,7 @@ class EmbedPosition(Layer):
         """
 
         #We assume that n < n_max
+        print(X.shape)
         n = X.shape[-1]
         z_0 = self.embed.forward(X) + self.params['Wp']['w'][:,:n]
         return z_0
@@ -359,7 +404,7 @@ class EmbedPosition(Layer):
 
 
 class FeedForward(Layer):
-    def __init__(self,d, p,init_scale = 0.1):
+    def __init__(self,d, p, init_scale = 0.1):
         """
         Input:
             d: input dimension of first layer and output of second
@@ -391,10 +436,13 @@ class FeedForward(Layer):
 
          (W1,W2 are p x d)
         """
+        print(f'{x.shape=}')
 
         self.x = x
 
-        return x + self.l2.forward(self.activation.forward(self.l1.forward(x)))
+        out = x + self.l2.forward(self.activation.forward(self.l1.forward(x)))
+        print(f'{out.shape=}')
+        return out
     
     def backward(self,grad):
         """
@@ -420,27 +468,42 @@ class FeedForward(Layer):
         self.l1.step_gd(step_size)
         self.l2.step_gd(step_size)
 
-class Adam:
-    def __init__(self):
-        return
-    
-    def step_adam(self, grad: np.ndarray, W: np.ndarray, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 0.01, epsilon: float = 10e-8):
-        V_0 = np.zeros(len(grad[0]))
-        M_0 = np.zeros(len(grad[0]))
-        M = np.zeros(len(grad))
-        M[0] = M_0
-        M_hat = np.zeros(len(grad))
-        V = np.zeros(len(grad))
-        V[0] = V_0
-        V_hat = np.zeros(len(grad))
-        
-        for j in range(1,len(grad)+1):
-            M[j] = beta1 * M[j-1] + (1-beta1) * grad[j]
-            V[j] = beta2 * V[j-1] + (1-beta2)*(grad[j]*grad[j])
-            M_hat[j] = (1/(1-beta1**j))*M[j]
-            V_hat[j] = (1/(1-beta1**j))*V[j]
-            W[j+1] = W[j] - alpha * (M_hat[j] / (np.sqrt(V_hat[j]) + epsilon))
 
-        return W
+
+class Optimizer(ABC):
+    @abstractmethod
+    def update(self, parameters: dict[str, np.ndarray]) -> None:
+        raise NotImplementedError
+
+
+class Adam(Optimizer):
+    def __init__(self, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 0.01, epsilon: float = 10e-8) -> None:
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.step = 0
+    
+    def update(self, parameters: dict[str, np.ndarray]):
+        """
+        Takes in gradients, parameters, and previous moments and returns the update step and both .
+        """
+        w, grad, m_prev, v_prev = parameters['w'], parameters['d'], parameters.get('m', None), parameters.get('v', None)
+        m_prev = np.zeros_like(w) if m_prev is None else m_prev
+        v_prev = np.zeros_like(w) if v_prev is None else v_prev
+
+        # Use m_prev and v_prev to find m and v
+
+        self.step += 1
+
+        m = self.beta1 * m_prev + (1-self.beta1) * grad
+        v = self.beta2 * v_prev + (1-self.beta2)*(grad*grad)
+        m_hat = (1/(1-self.beta1**self.step))*m
+        v_hat = (1/(1-self.beta1**self.step))*v
+        step = self.alpha * (m_hat / (np.sqrt(v_hat) + self.epsilon))
+
+        parameters['w'] -= step
+        parameters['m'] = m
+        parameters['v'] = v
 
 

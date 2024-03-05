@@ -1,6 +1,4 @@
 import numpy as np
-from neural_network import NeuralNetwork
-import layers
 
 def onehot(x,m):
     """
@@ -26,20 +24,3 @@ def onehot(x,m):
     x_one_hot[np.arange(b)[:,None],x,np.arange(n)[None,:]] = 1
     return x_one_hot
 
-
-def training(loss, alpha, beta1, beta2, data_set):
-    """Training of neural network in batches"""
-
-    network = NeuralNetwork()
-    cross_entropy = layers.CrossEntropy(layers.Layer)
-
-    for j in range(0, 300):
-        for k in range(0,len(data_set)):
-            x_true, y_true = data_set[k]
-            Y_pred = network.forward(x_true)
-            loss[j][k] = cross_entropy.forward(Y_pred, y_true)
-            for layer in network.layers:
-                if isinstance(layer, layers.LinearLayer, layers.EmbedPosition, layers.FeedForward, layers.Attention):
-                    grad = network.backward()
-                    W_new = layers.Adam.step_adam(grad, layer, beta1, beta2, alpha)
-    return W_new

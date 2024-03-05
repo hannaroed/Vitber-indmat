@@ -49,9 +49,9 @@ def get_train_test_sorting(length, num_ints, samples_per_batch,n_batches_train, 
     """
 
 
-    x_train = np.zeros((n_batches_train,samples_per_batch, 2*length-1))
+    x_train = np.zeros((n_batches_train,samples_per_batch, 2*length-1), dtype=int)
     y_train = np.zeros_like(x_train)
-    x_test = np.zeros((n_batches_test,samples_per_batch, 2*length-1))
+    x_test = np.zeros((n_batches_test,samples_per_batch, 2*length-1), dtype=int)
     y_test = np.zeros_like(x_test)
 
 

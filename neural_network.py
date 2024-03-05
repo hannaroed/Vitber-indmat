@@ -8,7 +8,7 @@ class NeuralNetwork:
     """
     
 
-    def __init__(self,layers):
+    def __init__(self, layers):
         #layers is a list where each element is of the Layer class
         self.layers = layers
     
@@ -18,7 +18,7 @@ class NeuralNetwork:
             x = layer.forward(x)
         return x
     
-    def backward(self,grad):
+    def backward(self, grad):
         """
         Recursively perform backward pass 
         from grad : derivative of the loss wrt 
@@ -32,8 +32,7 @@ class NeuralNetwork:
     
     def step_gd(self,alpha):
         """
-        Perform a gradient descent step for each layer,
-        but only if it is a linear layer.
+        Perform a gradient descent step for each layer.
         """
         for layer in self.layers:
             #Check if layer is of class a class that has parameters
