@@ -11,13 +11,13 @@ class Layer:
         
         return
 
-    def forward(self,inputs):
+    def forward(self, inputs):
         raise NotImplementedError
 
-    def backward(self,grad):
+    def backward(self, grad):
         raise NotImplementedError
     
-    def step_gd(self,alpha): 
+    def step_gd(self, alpha): 
         """
         Performs a gradient descent step given learning rate.
         Assumes that the layer has a parameter dictionary "params" on the form
@@ -34,14 +34,6 @@ class Layer:
         """
         for param in self.params:
             self.params[param]['w'] -= alpha*self.params[param]['d']
-
-    def adam(self, alpha):
-        for param in self.params:
-            self.params[param]['w'] -= alpha*self.params[param]['d']
-
-        for i in range(n):
-            grad = 
-
 
 
 
@@ -172,7 +164,7 @@ class LinearLayer(Layer):
     """
     Linear Layer
     """
-    def __init__(self,input_size, output_size,init_scale = 0.1):
+    def __init__(self, input_size, output_size, init_scale = 0.1):
         """
         Constructor takes input size and output size of layer 
         and scale for the weights
@@ -244,7 +236,7 @@ class Relu(Layer):
 
 
 class EmbedPosition(Layer):
-    def __init__(self,n_max,m,d,init_scale=1e-1):   
+    def __init__(self, n_max, m, d, init_scale=1e-1):   
 
         """
         n_max: maximum length of input sequence
@@ -255,7 +247,7 @@ class EmbedPosition(Layer):
         #Initialize a linear layer for the embedding
         self.embed = LinearLayer(m,d,init_scale)
         #Initialize the position embedding matrix
-        self.w = np.random.randn(d,n_max)*init_scale
+        self.w = np.random.randn(d,n_max) * init_scale
 
         #Initialize the parameter dictionary for weight with key "Wp"
         self.params = {"Wp":{'w':self.w,'d':None}}
@@ -374,7 +366,30 @@ class FeedForward(Layer):
 
 
     def step_gd(self,step_size):
-
+ 
         #Call the step_gd method of the linear layers
         self.l1.step_gd(step_size)
         self.l2.step_gd(step_size)
+
+class Adam:
+    def __init__(self):
+        return
+    
+    def step_adam(self, grad: np.ndarray, W: np.ndarray, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 0.01, epsilon: float = 10e-8):
+        V_0 = np.zeros(len(grad[0]))
+        M_0 = np.zeros(len(grad[0]))
+        M = np.zeros(len(grad))
+        M[0] = M_0
+        M_hat = np.zeros(len(grad))
+        V = np.zeros(len(grad))
+        V[0] = V_0
+        V_hat = np.zeros(len(grad))
+        
+        for j in range(1,len(grad)+1):
+            M[j] = beta1 * M[j-1] + (1-beta1) * grad[j]
+            V[j] = beta2 * V[j-1] + (1-beta2)*(grad[j]*grad[j])
+            M_hat[j] = (1/(1-beta1**j))*M[j]
+            V_hat[j] = (1/(1-beta1**j))*V[j]
+            W[j+1] = W[j] - alpha * (M_hat[j] / (np.sqrt(V_hat[j]) + epsilon))
+
+        return W

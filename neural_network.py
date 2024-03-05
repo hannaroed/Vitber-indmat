@@ -6,6 +6,7 @@ class NeuralNetwork:
     and performs forward and backward pass, as well
     as gradient descent step.
     """
+    
 
     def __init__(self,layers):
         #layers is a list where each element is of the Layer class
