@@ -27,7 +27,7 @@ def onehot(x,m):
     return x_one_hot
 
 
-def training(loss, theta, alpha, beta1, beta2, data_set):
+def training(loss, alpha, beta1, beta2, data_set):
     """Training of neural network in batches"""
 
     network = NeuralNetwork()

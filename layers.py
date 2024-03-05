@@ -393,3 +393,5 @@ class Adam:
             W[j+1] = W[j] - alpha * (M_hat[j] / (np.sqrt(V_hat[j]) + epsilon))
 
         return W
+
+

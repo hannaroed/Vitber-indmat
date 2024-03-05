@@ -33,11 +33,11 @@ class NeuralNetwork:
     def step_gd(self,alpha):
         """
         Perform a gradient descent step for each layer,
-        but only if it is of the class LinearLayer.
+        but only if it is a linear layer.
         """
         for layer in self.layers:
             #Check if layer is of class a class that has parameters
-            if isinstance(layer,LinearLayer,EmbedPosition,FeedForward,Attention):
+            if isinstance(layer, LinearLayer, EmbedPosition, FeedForward, Attention):
                 layer.step_gd(alpha)
         return
     
