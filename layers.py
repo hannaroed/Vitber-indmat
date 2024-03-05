@@ -160,12 +160,13 @@ class Softmax(Layer):
         self.prev_z_l: np.ndarray | None = None
     
     def forward(self, x):
-        # x: (batch, d, n)
-
         """Columnwise softmax operation"""
+        # x: (batch, d, n)
         self.x = x
 
-        P = np.exp(x - x.max(axis=0, keepdims=True))
+        shifted = np.where(np.isneginf(x), x, x - x.max(axis=1, keepdims=True))
+
+        P = np.exp(shifted)
         Q = np.sum(P, axis=0, keepdims=True)
 
         z_l = P / (Q + self.epsilon)
@@ -209,9 +210,14 @@ class CrossEntropy(Layer):
         self.prev_y_pred = y_pred
         self.prev_y = y_true
 
-        # out: (batch, n)
+        # out: (batch,)
 
-        return -np.log(y_pred[:, y_true, :] + self.epsilon)
+        batch_index = np.arange(y_pred.shape[0])[:, None]
+        seq_index = np.arange(y_pred.shape[2])[None, :]
+
+        out = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon).mean(axis=1)
+
+        return out
 
     def backward(self):
         out = np.zeros_like(self.prev_y_pred)
@@ -220,7 +226,7 @@ class CrossEntropy(Layer):
 
         out[:, self.prev_y, :] = -hot
 
-        print(out.shape)
+        print(f'loss: {out.shape=}')
 
         return out
     

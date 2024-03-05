@@ -42,6 +42,7 @@ def test_backward():
     
 
 def test_adam():
+    np.seterr(all='raise')
     model = make_model()
     optimizer = l.Adam()
 
@@ -53,7 +54,9 @@ def test_adam():
 
     loss_function = l.CrossEntropy()
     print(train_set[1][0])
-    loss_function.forward(y_hat, y_true=train_set[1][0])
+    loss_value = loss_function.forward(y_hat, y_true=train_set[1][0])
+    print(f'{loss_value=}')
+    print(f'{loss_value.shape=}')
     grad_loss = loss_function.backward()
 
     model.backward(grad_loss)
@@ -63,6 +66,6 @@ def test_adam():
 
 
 if __name__ == '__main__':
-    test_forward_shape()
-    test_backward()
+    # test_forward_shape()
+    # test_backward()
     test_adam()
