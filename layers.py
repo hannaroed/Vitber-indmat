@@ -3,13 +3,38 @@ from abc import ABC, abstractmethod
 import functools
 import numpy as np
 from utils import onehot
+from math import sqrt
+
+from numba import njit
+import numba as nb
+from numba.experimental import jitclass
+
+@njit(inline='always')
+def numba_max_axis1(a):
+    # Keeps dims
+    assert a.ndim == 3
+    running = np.zeros((a.shape[0], 1, a.shape[2]))
+    for i in range(a.shape[1]):
+        running = np.maximum(running, a[:, i:i+1, ...])
+    return running
+
+@njit(inline='always')
+def numba_mean_axis0(a):
+    # Reduces dims
+    assert a.ndim == 3
+    running = np.zeros((a.shape[1], a.shape[2]))
+    for i in range(a.shape[0]):
+        running += a[i, ...]
+    return running / a.shape[0]
+    
+
 
 class Layer:
     """
     Base class for layers in the neural network with forward and backward pass.
     """
     def __init__(self):
-        self.params = {}
+        pass
 
     def forward(self, inputs):
         raise NotImplementedError
@@ -34,19 +59,138 @@ class Layer:
         }
         where each parameter has a key 'w' for weights and 'd' for gradients.
         """
+        if not hasattr(self, 'params'):
+            return
+
         for param in self.params.values():
             optimizer.update(param)
 
 
+from numba.types import DictType
 
-@functools.lru_cache(maxsize=None)
+key_type, entry_type = nb.types.unicode_type, nb.float64[:, :]
+inner_type = nb.types.DictType(key_type, entry_type)
+outer_type = nb.types.DictType(key_type, inner_type)
+@jitclass([
+    ('params', outer_type),
+    ('x', nb.float64[:, :, :]),
+])
+class LinearLayer(Layer):
+
+    """
+    Linear Layer
+    """
+    def __init__(self, input_size, output_size, init_scale = 0.1):
+        """
+        Constructor takes input size and output size of layer 
+        and scale for the weights
+        """
+
+        #Initialize weights using a sample from the normal distribution
+        #scaled with the init_scale
+        w = np.random.randn(output_size,input_size)*init_scale
+        # outer = nb.typed.Dict.empty(key_type, DictType(entry_type))
+        # inner = nb.typed.Dict.empty(key_type, entry_type)
+        # inner['w'] = w
+        # inner['d'] = np.zeros_like(w)
+        # outer['w'] = inner
+        # self.params = outer
+        inner = nb.typed.Dict.empty(key_type, entry_type)
+        inner['w'] = w
+        inner['d'] = np.zeros_like(w)
+        params = nb.typed.Dict.empty(key_type, inner_type)
+        self.params = params
+        self.params['w'] = inner
+
+        # self.params = {"w":{'w':w,
+        #                     'd':np.zeros_like(self.w), }}
+        
+
+    def forward(self, x):
+        """
+        Computes the affine transformation of the forward pass
+        Stores input for backwards pass and returns output y = Wx.
+
+        x: input, array of shape (batch_size, input_size, n) = (b,d,n)
+        y: output, array of shape (batch_size, output_size, n) = (b,o,n)
+        """
+
+        self.x = x
+        
+        #Return output of layer
+        # Original
+        # y = np.einsum('od,bdn->bon', self.params['w']['w'], x)
+
+        # Efficient
+        # w = self.params['w']['w']
+        # w = w[None, :, :]
+        # y = w @ x
+
+        # Numba
+        y = np.zeros((x.shape[0], self.params['w']['w'].shape[0], x.shape[2]))
+        for b in range(x.shape[0]):
+            y[b, :, :] = self.params['w']['w'] @ x[b, :, :]
+        return y
+        
+    def backward(self, grad):
+        """
+        Performs backward pass.
+
+        grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n)
+        """
+
+        b = grad.shape[0]
+
+        #Compute gradient (average over B batches) of loss wrt weight w: 
+        #dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
+
+        # Original
+        # self.params['w']['d'] = np.einsum('bon,bdn->od', grad, self.x) / b
+
+        # Optimized
+        grad_mean = numba_mean_axis0(grad)
+        x_mean = numba_mean_axis0(self.x).T
+        self.params['w']['d'] = grad_mean @ x_mean
+
+
+        #Return gradient of loss wrt input of layer
+        #dL/dw = w@grad.T
+        # Original
+        # return np.einsum('od,bon->bdn', self.params['w']['w'], grad)
+
+        # Optimized
+        # out = self.params['w']['w'].T @ grad
+
+        # Numba
+        out = np.zeros((b, self.params['w']['w'].shape[1], grad.shape[2]))
+        for b in range(b):
+            out[b, :, :] = self.params['w']['w'].T @ grad[b, :, :]
+        return out
+    
+
+# @functools.lru_cache(maxsize=None)
+@njit
 def make_D_matrix(n):
     D = np.zeros((n, n))
     i1, i2 = np.tril_indices(n, -1)
-    D[i1,i2] -= np.inf
+    for i, j in zip(i1, i2):
+        D[i, j] = -np.inf
     return D[None, :, :]
 
+@njit(inline='always')
+def double_batched_mm(A, B):
+    b, ao, ai = A.shape
+    b, bi, bo = B.shape
+    assert ai == bi
+    out = np.zeros((b, ao, bo))
+    for i in range(b):
+        out[i] = A[i] @ B[i]
+    return out
 
+@jitclass([
+    ('prev_A', nb.optional(nb.float64[:, :, :])),
+    ('prev_B', nb.optional(nb.float64[:, :, :])),
+])
 class Matmul(Layer):
     def __init__(self):
         self.prev_A: np.ndarray | None = None
@@ -55,20 +199,91 @@ class Matmul(Layer):
     def forward(self, A, B):
         self.prev_A = A
         self.prev_B = B
-        return A @ B
+        # Standard
+        # return A @ B
+
+        # Numba
+        b, ao, ai = A.shape
+        b, bi, bo = B.shape
+        assert ai == bi
+        out = np.zeros((b, ao, bo))
+        for i in range(b):
+            out[i] = A[i] @ B[i]
+        return out
+    
+    def noop():
+        return False
     
     def backward(self, dL_dAB):
-        print(dL_dAB.shape, self.prev_B.shape, self.prev_A.shape)
-        dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
-        dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
-        print(dL_dA.shape, dL_dB.shape)
+        # Standard
+        # dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
+        # dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
+
+        # Numba
+        dL_dA = double_batched_mm(dL_dAB, self.prev_B.transpose(0, 2, 1))
+        dL_dB = double_batched_mm(self.prev_A.transpose(0, 2, 1), dL_dAB)
         return dL_dA, dL_dB
 
 
+@jitclass([
+    ('epsilon', nb.float64),
+    ('prev_Q', nb.optional(nb.float64[:, :, :])),
+    ('prev_P', nb.optional(nb.float64[:, :, :])),
+    ('prev_z_l', nb.optional(nb.float64[:, :, :])),
+])
+class Softmax(Layer):
+
+    def __init__(self, epsilon: float = 1e-8):
+        self.epsilon = epsilon
+
+        self.prev_Q: np.ndarray | None = None
+        self.prev_P: np.ndarray | None = None
+        self.prev_z_l: np.ndarray | None = None
+    
+    def forward(self, x):
+        """Columnwise softmax operation"""
+        # x: (batch, d, n)
+        # self.x = x
+
+        # For numerical stability
+        # Standard
+        # shifted = np.where(np.isneginf(x), x, x - np.max(x, axis=1, keepdims=True))
+
+        # Numba
+        max_vals = numba_max_axis1(x)
+        shifted = np.where(np.isneginf(x), x, x - max_vals)
+
+        P = np.exp(shifted)
+        Q = np.sum(P, axis=1)[:, None, ...]
+
+        z_l = P / (Q + self.epsilon)
+
+        self.prev_P = P
+        self.prev_Q = Q
+        self.prev_z_l = z_l
+
+        return z_l
+
+
+    def backward(self, grad):
+        P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
+        
+        S = P / (Q * Q + self.epsilon)
+
+        dL_dz = grad * z_l - np.sum(grad * S, axis=1)[:, None, ...] * P
+
+        
+        return dL_dz
+
+
+@jitclass([
+    ('softmax', Softmax.class_type.instance_type),
+    ('matmul1', Matmul.class_type.instance_type),
+    ('matmul2', Matmul.class_type.instance_type)
+])
 class Attention(Layer):
     def __init__(self):
-        super().__init__()
-        self.softmax = Softmax()
+        self.softmax = Softmax(1e-8)
         self.matmul1 = Matmul()
         self.matmul2 = Matmul()
 
@@ -76,8 +291,9 @@ class Attention(Layer):
         b, d, n = Q.shape
         D = make_D_matrix(n)
 
-        print(Q.shape, K.shape, np.transpose(Q, axes=(0, 2, 1)).shape)
-        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1), K) / np.sqrt(d)
+        # Q = Q.transpose(0, 2, 1)
+        # self.matmuli.noop()
+        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1), K) / sqrt(d)
 
         A = self.softmax.forward(qk_prod + D)
 
@@ -91,7 +307,6 @@ class Attention(Layer):
         dL_dqk_prod = self.softmax.backward(dL_dA)
 
         dL_dQ, dL_dK = self.matmul1.backward(dL_dqk_prod)
-        print(dL_dQ.shape)
         dL_dQ = dL_dQ.transpose(0, 2, 1)
 
         b, d, n = dL_dQ.shape
@@ -102,18 +317,26 @@ class Attention(Layer):
         return dL_dQ, dL_dK, dL_dV
 
 
+@jitclass([
+    ('W_q', LinearLayer.class_type.instance_type),
+    ('W_k', LinearLayer.class_type.instance_type),
+    ('W_v', LinearLayer.class_type.instance_type),
+    ('W_o', LinearLayer.class_type.instance_type),
+    ('prev_A', nb.optional(nb.float64[:, :, :])),
+    ('softmax', Softmax.class_type.instance_type),
+    ('attention', Attention.class_type.instance_type)
+])
 class SelfAttention(Layer):
 
     def __init__(self, d, k):
-        super().__init__()
-        self.W_q = LinearLayer(d, k, init_scale=0.1)
-        self.W_k = LinearLayer(d, k, init_scale=0.1)
-        self.W_v = LinearLayer(d, k, init_scale=0.1)
-        self.W_o = LinearLayer(k, d, init_scale=0.1)
+        self.W_q = LinearLayer(d, k, 0.1)
+        self.W_k = LinearLayer(d, k, 0.1)
+        self.W_v = LinearLayer(d, k, 0.1)
+        self.W_o = LinearLayer(k, d, 0.1)
 
         self.prev_A: np.ndarray | None = None
 
-        self.softmax = Softmax()
+        self.softmax = Softmax(1e-8)
 
         self.attention = Attention()
 
@@ -125,9 +348,9 @@ class SelfAttention(Layer):
         K = self.W_k.forward(z)  # (b, k, n)
         V = self.W_v.forward(z)  # (b, k, n)
 
-        VA = self.attention.forward(Q, K, V)
+        VA = self.attention.forward(Q, K, V)  # (b, k, n)
 
-        out = self.W_o.forward(VA)
+        out = self.W_o.forward(VA)  # (b, d, n)
 
         return out
 
@@ -149,54 +372,10 @@ class SelfAttention(Layer):
     
 
 
-class Softmax(Layer):
-
-    def __init__(self, epsilon: float = 10e-8):
-        super().__init__()
-        self.epsilon = epsilon
-
-        self.prev_Q: np.ndarray | None = None
-        self.prev_P: np.ndarray | None = None
-        self.prev_z_l: np.ndarray | None = None
-    
-    def forward(self, x):
-        """Columnwise softmax operation"""
-        # x: (batch, d, n)
-        self.x = x
-
-        shifted = np.where(np.isneginf(x), x, x - x.max(axis=1, keepdims=True))
-
-        P = np.exp(shifted)
-        Q = np.sum(P, axis=0, keepdims=True)
-
-        z_l = P / (Q + self.epsilon)
-
-        self.prev_P = P
-        self.prev_Q = Q
-        self.prev_z_l = z_l
-
-        return z_l
-
-
-    def backward(self, grad):
-        P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
-        
-        S = P / (Q * Q + self.epsilon)
-        # print(f'{S.shape=}')
-        # print(f'{z_l.shape=}')
-        # print(f'{(grad * S).shape=}')
-
-        dL_dz = grad * z_l - np.sum(grad * S, axis=1, keepdims=True) * P
-
-        print(f'{dL_dz.shape=}')
-        
-        return dL_dz
-
 
 class CrossEntropy(Layer):
 
     def __init__(self, epsilon = 10e-18):
-        super().__init__()
         self.epsilon = epsilon
         self.prev_y_pred: np.ndarray | None = None
         self.prev_y: int | None = None
@@ -205,8 +384,12 @@ class CrossEntropy(Layer):
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
         """Cross entropy definition in assignment is wrong"""
         # y_pred: (batch, d, n)
-        # y_true: (batch, d)
+        # y_true: (batch, n)
         # d = embedding dimension = number of classes
+
+        # IMPORTANT -- this takes in vectors of indices, and NOT one-hot encoded vectors.
+        # This is a more efficient way of doing it
+
         self.prev_y_pred = y_pred
         self.prev_y = y_true
 
@@ -215,106 +398,37 @@ class CrossEntropy(Layer):
         batch_index = np.arange(y_pred.shape[0])[:, None]
         seq_index = np.arange(y_pred.shape[2])[None, :]
 
-        out = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon).mean(axis=1)
+        per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
+        
+        per_sequence_loss = per_token_loss.mean(axis=1)
 
-        return out
+        return per_sequence_loss
 
     def backward(self):
         out = np.zeros_like(self.prev_y_pred)
 
-        hot = 1 / self.prev_y_pred[:, self.prev_y, :]
+        b, m, n = self.prev_y_pred.shape
 
-        out[:, self.prev_y, :] = -hot
+        # Create one-hot
+        prev_y_oh = onehot(self.prev_y, m)
 
-        print(f'loss: {out.shape=}')
+        out = - 1/n * (prev_y_oh / (self.prev_y_pred + self.epsilon))
 
         return out
     
 
 
-class LinearLayer(Layer):
 
-    """
-    Linear Layer
-    """
-    def __init__(self, input_size, output_size, init_scale = 0.1):
-        """
-        Constructor takes input size and output size of layer 
-        and scale for the weights
-        """
-        super().__init__()
-
-        #Initialize weights using a sample from the normal distribution
-        #scaled with the init_scale
-        self.w = np.random.randn(output_size,input_size)*init_scale
-        self.params = {"w":{'w':self.w,
-                            'd':np.zeros_like(self.w), }}
-        
-
-    def forward(self, x):
-        """
-        Computes the affine transformation of the forward pass
-        Stores input for backwards pass and returns output y = Wx.
-
-        x: input, array of shape (batch_size, input_size, n) = (b,d,n)
-        y: output, array of shape (batch_size, output_size, n) = (b,o,n)
-        """
-
-        self.x = x
-        
-        #Return output of layer
-        #y = w@x
-        y = np.einsum('od,bdn->bon', self.params['w']['w'], x)
-        return y
-        
-    def backward(self, grad):
-        """
-        Performs backward pass.
-
-        grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n)
-        """
-
-        b = grad.shape[0]
-        print(f'{grad.shape=}')
-        print(f'{self.x.shape=}')
-
-        #Compute gradient (average over B batches) of loss wrt weight w: 
-        #dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
-        self.params['w']['d'] = np.einsum('bon,bdn->od', grad, self.x) / b
-
-        #Return gradient of loss wrt input of layer
-        #dL/dw = w@grad.T
-        return np.einsum('od,bon->bdn', self.params['w']['w'], grad)
-    
-
-class TransformerBlock(Layer):
-    def __init__(self, d, k, p):
-        super().__init__()
-        self.self_attention = SelfAttention(d=d, k=k)
-        self.feed_forward = FeedForward(d=d, p=p)
-    
-    def forward(self, z):
-        z_l_half = self.self_attention.forward(z) + z
-        z_l = self.feed_forward.forward(z_l_half) # has resnet connection
-        return z_l
-
-    def backward(self, grad):
-        dL_dz_half = self.feed_forward.backward(grad)
-        grad = self.self_attention.backward(dL_dz_half) + dL_dz_half
-        return grad
-    
-    def step_gd(self, optimizer: Optimizer):
-        self.self_attention.step_gd(optimizer)
-        self.feed_forward.step_gd(optimizer)
-
-
+@jitclass([
+    ('x', nb.float64[:, :, :]),
+])
 class Relu(Layer):
     """
     Relu activation function
     """
 
     def __init__(self):
-        super().__init__()
+        pass
 
     def relu(self,x):
         #relu(x) = max(0,x)
@@ -332,6 +446,11 @@ class Relu(Layer):
         return grad * np.where(self.x > 0, np.ones_like(self.x), np.zeros_like(self.x))
 
 
+@jitclass([
+    ('embed', LinearLayer.class_type.instance_type),
+    ('w', nb.float64[:, :]),
+    ('params', outer_type)
+])
 class EmbedPosition(Layer):
     def __init__(self, n_max, m, d, init_scale=1e-1):   
 
@@ -347,7 +466,11 @@ class EmbedPosition(Layer):
         self.w = np.random.randn(d,n_max) * init_scale
 
         #Initialize the parameter dictionary for weight with key "Wp"
-        self.params = {"Wp": {'w':self.w, 'd':None}}
+        self.params = nb.typed.Dict.empty(key_type, inner_type)
+        self.params['Wp'] = nb.typed.Dict.empty(key_type, entry_type)
+        self.params['Wp']['w'] = self.w
+        self.params['Wp']['d'] = np.zeros_like(self.w)
+        # self.params = {"Wp": {'w':self.w, 'd':None}}
 
     def forward(self, X):
 
@@ -369,7 +492,6 @@ class EmbedPosition(Layer):
         """
 
         #We assume that n < n_max
-        print(X.shape)
         n = X.shape[-1]
         z_0 = self.embed.forward(X) + self.params['Wp']['w'][:,:n]
         return z_0
@@ -396,21 +518,26 @@ class EmbedPosition(Layer):
         #This is always the final layer, so we return None
         return None
     
-    def step_gd(self,step_size):
+    def step_gd(self, optimizer):
 
         #We need to call the step_gd method of the linear layer
-        self.embed.step_gd(step_size)
+        self.embed.step_gd(optimizer)
 
-        #And since we override step_gd(), we use super 
-        #which calls the step_gd() of the base class
-        #and does gd for the paramters in the params dict
-        super().step_gd(step_size)
-
+        # Update parameters
+        for param in self.params.values():
+            optimizer.update(param)
 
 
 
+
+@jitclass([
+    ('l1', LinearLayer.class_type.instance_type),
+    ('activation', Relu.class_type.instance_type),
+    ('l2', LinearLayer.class_type.instance_type),
+    ('x', nb.optional(nb.float64[:, :, :])),
+])
 class FeedForward(Layer):
-    def __init__(self,d, p, init_scale = 0.1):
+    def __init__(self, d, p, init_scale = 0.1):
         """
         Input:
             d: input dimension of first layer and output of second
@@ -442,12 +569,11 @@ class FeedForward(Layer):
 
          (W1,W2 are p x d)
         """
-        print(f'{x.shape=}')
 
         self.x = x
 
         out = x + self.l2.forward(self.activation.forward(self.l1.forward(x)))
-        print(f'{out.shape=}')
+
         return out
     
     def backward(self,grad):
@@ -474,27 +600,60 @@ class FeedForward(Layer):
         self.l1.step_gd(step_size)
         self.l2.step_gd(step_size)
 
+@jitclass([
+    ('self_attention', SelfAttention.class_type.instance_type),
+    ('feed_forward', FeedForward.class_type.instance_type)
+])
+class TransformerBlock(Layer):
+    def __init__(self, d, k, p):
+        self.self_attention = SelfAttention(d, k)
+        self.feed_forward = FeedForward(d, p, 0.1)
+    
+    def forward(self, z):
+        z_l_half = self.self_attention.forward(z) + z
+        z_l = self.feed_forward.forward(z_l_half) # has resnet connection
+        return z_l
+
+    def backward(self, grad):
+        dL_dz_half = self.feed_forward.backward(grad)
+        grad = self.self_attention.backward(dL_dz_half) + dL_dz_half
+        return grad
+    
+    def step_gd(self, optimizer: Optimizer):
+        self.self_attention.step_gd(optimizer)
+        self.feed_forward.step_gd(optimizer)
 
 
-class Optimizer(ABC):
-    @abstractmethod
+
+
+class Optimizer:
     def update(self, parameters: dict[str, np.ndarray]) -> None:
         raise NotImplementedError
 
 
+@jitclass([
+    ('beta1', nb.float64),
+    ('beta2', nb.float64),
+    ('alpha', nb.float64),
+    ('epsilon', nb.float64),
+    ('step', nb.int64),
+])
 class Adam(Optimizer):
-    def __init__(self, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 0.01, epsilon: float = 10e-8) -> None:
+    def __init__(self, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 3e-4, epsilon: float = 10e-8) -> None:
         self.beta1 = beta1
         self.beta2 = beta2
         self.alpha = alpha
         self.epsilon = epsilon
         self.step = 0
     
-    def update(self, parameters: dict[str, np.ndarray]):
+    def reset(self):
+        self.step = 0
+    
+    def update(self, parameter: dict[str, np.ndarray]):
         """
         Takes in gradients, parameters, and previous moments and returns the update step and both .
         """
-        w, grad, m_prev, v_prev = parameters['w'], parameters['d'], parameters.get('m', None), parameters.get('v', None)
+        w, grad, m_prev, v_prev = parameter['w'], parameter['d'], parameter.get('m', None), parameter.get('v', None)
         m_prev = np.zeros_like(w) if m_prev is None else m_prev
         v_prev = np.zeros_like(w) if v_prev is None else v_prev
 
@@ -502,14 +661,22 @@ class Adam(Optimizer):
 
         self.step += 1
 
-        m = self.beta1 * m_prev + (1-self.beta1) * grad
-        v = self.beta2 * v_prev + (1-self.beta2)*(grad*grad)
-        m_hat = (1/(1-self.beta1**self.step))*m
-        v_hat = (1/(1-self.beta1**self.step))*v
+        m = self.beta1 * m_prev + (1 - self.beta1) * grad
+        v = self.beta2 * v_prev + (1 - self.beta2) * (grad ** 2)
+
+        m_hat = (1 / (1 - self.beta1**self.step)) * m
+        v_hat = (1 / (1 - self.beta1**self.step)) * v
+
         step = self.alpha * (m_hat / (np.sqrt(v_hat) + self.epsilon))
 
-        parameters['w'] -= step
-        parameters['m'] = m
-        parameters['v'] = v
+        # print(np.abs(step).mean())
+        # before = parameter['w'].copy()
+
+        parameter['w'] -= step
+        parameter['m'] = m
+        parameter['v'] = v
+
+        # after = parameter['w']
+        # print(np.abs(before - after).mean())
 
 

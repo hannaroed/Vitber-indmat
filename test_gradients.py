@@ -1,4 +1,5 @@
 import numpy as np
+from tqdm import trange
 
 
 import layers as l
@@ -17,7 +18,6 @@ def test_forward_shape():
 
     train_set = get_test_data()
 
-    print(train_set[0][0].shape)
 
     batch_x = onehot(train_set[0][0], 2)
     out = model.forward(batch_x)
@@ -34,7 +34,6 @@ def test_backward():
     y_hat = model.forward(batch_x)
 
     loss_function = l.CrossEntropy()
-    print(train_set[1][0])
     loss_function.forward(y_hat, y_true=train_set[1][0])
     grad_loss = loss_function.backward()
 
@@ -45,24 +44,28 @@ def test_adam():
     np.seterr(all='raise')
     model = make_model()
     optimizer = l.Adam()
-
-    grad_loss = np.random.randn(250)
+    # Overfit on a single example
 
     train_set = get_test_data()
-    batch_x = onehot(train_set[0][0], 2)
-    y_hat = model.forward(batch_x)
 
     loss_function = l.CrossEntropy()
-    print(train_set[1][0])
-    loss_value = loss_function.forward(y_hat, y_true=train_set[1][0])
-    print(f'{loss_value=}')
-    print(f'{loss_value.shape=}')
-    grad_loss = loss_function.backward()
 
-    model.backward(grad_loss)
-    for layer in model.layers:
-        if hasattr(layer, 'step_gd'):
-            layer.step_gd(optimizer)
+    labels = train_set[0][0]
+    batch_x = onehot(labels, 2)
+
+    for _ in range(1000):
+        y_hat = model.forward(batch_x)
+        y_hat_indices = np.argmax(y_hat, axis=1)
+        loss_value = loss_function.forward(y_hat, y_true=train_set[1][0]).mean()
+        grad_loss = loss_function.backward()
+
+        correct = y_hat_indices == labels
+        accuracy = np.mean(correct)
+        print(f'{accuracy=}, {loss_value=}')
+
+        model.backward(grad_loss)
+
+        model.step_gd(optimizer)
 
 
 if __name__ == '__main__':

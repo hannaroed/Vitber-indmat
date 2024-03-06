@@ -30,14 +30,13 @@ class NeuralNetwork:
             grad = layer.backward(grad)
         return grad
     
-    def step_gd(self,alpha):
+    def step_gd(self, alpha):
         """
         Perform a gradient descent step for each layer.
         """
         for layer in self.layers:
             #Check if layer is of class a class that has parameters
-            if isinstance(layer, LinearLayer, EmbedPosition, FeedForward, Attention):
+            if hasattr(layer, 'step_gd'):
                 layer.step_gd(alpha)
-        return
     
     
