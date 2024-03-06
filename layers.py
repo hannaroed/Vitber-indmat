@@ -311,8 +311,8 @@ class Attention(Layer):
 
         b, d, n = dL_dQ.shape
 
-        dL_dQ /= np.sqrt(d)
-        dL_dK /= np.sqrt(d)
+        dL_dQ /= sqrt(d)
+        dL_dK /= sqrt(d)
 
         return dL_dQ, dL_dK, dL_dV
 
