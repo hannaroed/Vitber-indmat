@@ -1,6 +1,4 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
-import functools
 import numpy as np
 from utils import onehot
 from math import sqrt
@@ -76,7 +74,6 @@ outer_type = nb.types.DictType(key_type, inner_type)
     ('x', nb.float64[:, :, :]),
 ])
 class LinearLayer(Layer):
-
     """
     Linear Layer
     """
@@ -127,9 +124,8 @@ class LinearLayer(Layer):
         # y = w @ x
 
         # Numba
-        y = np.zeros((x.shape[0], self.params['w']['w'].shape[0], x.shape[2]))
-        for b in range(x.shape[0]):
-            y[b, :, :] = self.params['w']['w'] @ x[b, :, :]
+        w = self.params['w']['w']
+        y = batched_mm(w, x)
         return y
         
     def backward(self, grad):
@@ -149,7 +145,7 @@ class LinearLayer(Layer):
 
         # Optimized
         grad_mean = numba_mean_axis0(grad)
-        x_mean = numba_mean_axis0(self.x).T
+        x_mean = numba_mean_axis0(self.x).T.copy()
         self.params['w']['d'] = grad_mean @ x_mean
 
 
@@ -162,9 +158,8 @@ class LinearLayer(Layer):
         # out = self.params['w']['w'].T @ grad
 
         # Numba
-        out = np.zeros((b, self.params['w']['w'].shape[1], grad.shape[2]))
-        for b in range(b):
-            out[b, :, :] = self.params['w']['w'].T @ grad[b, :, :]
+        w = self.params['w']['w']
+        out = batched_mm(w.T.copy(), grad)
         return out
     
 
@@ -177,15 +172,48 @@ def make_D_matrix(n):
         D[i, j] = -np.inf
     return D[None, :, :]
 
-@njit(inline='always')
-def double_batched_mm(A, B):
-    b, ao, ai = A.shape
-    b, bi, bo = B.shape
-    assert ai == bi
-    out = np.zeros((b, ao, bo))
-    for i in range(b):
-        out[i] = A[i] @ B[i]
-    return out
+# @njit(inline='always')
+# def double_batched_mm(A, B):
+#     ab, ao, ai = A.shape
+#     bb, bi, bo = B.shape
+#     assert ai == bi
+#     assert ab == bb
+#     out = np.zeros((ab, ao, bo))
+#     for i in range(ab):
+#         out[i] = A[i] @ B[i]
+#     return out
+
+@njit(parallel=True)
+def batched_mm(A, B):
+    """Either a or b or both can have a batch dimension"""
+    if A.ndim == 3 and B.ndim == 3:
+        ab, ao, ai = A.shape
+        bb, bi, bo = B.shape
+        assert ab == bb
+        assert ai == bi
+        out = np.zeros((ab, ao, bo))
+        for i in nb.prange(ab):
+            out[i] = A[i] @ B[i]
+        return out
+    if A.ndim == 3 and B.ndim == 2:
+        ab, ao, ai = A.shape
+        bi, bo = B.shape
+        assert ai == bi
+        out = np.zeros((ab, ao, bo))
+        for i in nb.prange(ab):
+            out[i] = A[i] @ B
+        return out
+    if A.ndim == 2 and B.ndim == 3:
+        ao, ai = A.shape
+        ab, bi, bo = B.shape
+        assert ai == bi
+        out = np.zeros((ab, ao, bo))
+        for i in nb.prange(ab):
+            out[i] = A @ B[i]
+        return out
+    if A.ndim == 2 and B.ndim == 2:
+        return A @ B
+    raise ValueError("Invalid dimensions")
 
 @jitclass([
     ('prev_A', nb.optional(nb.float64[:, :, :])),
@@ -203,16 +231,7 @@ class Matmul(Layer):
         # return A @ B
 
         # Numba
-        b, ao, ai = A.shape
-        b, bi, bo = B.shape
-        assert ai == bi
-        out = np.zeros((b, ao, bo))
-        for i in range(b):
-            out[i] = A[i] @ B[i]
-        return out
-    
-    def noop():
-        return False
+        return batched_mm(A, B)
     
     def backward(self, dL_dAB):
         # Standard
@@ -220,8 +239,8 @@ class Matmul(Layer):
         # dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
 
         # Numba
-        dL_dA = double_batched_mm(dL_dAB, self.prev_B.transpose(0, 2, 1))
-        dL_dB = double_batched_mm(self.prev_A.transpose(0, 2, 1), dL_dAB)
+        dL_dA = batched_mm(dL_dAB, self.prev_B.transpose(0, 2, 1).copy())
+        dL_dB = batched_mm(self.prev_A.transpose(0, 2, 1).copy(), dL_dAB)
         return dL_dA, dL_dB
 
 
@@ -293,7 +312,7 @@ class Attention(Layer):
 
         # Q = Q.transpose(0, 2, 1)
         # self.matmuli.noop()
-        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1), K) / sqrt(d)
+        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1).copy(), K) / sqrt(d)
 
         A = self.softmax.forward(qk_prod + D)
 
@@ -307,7 +326,7 @@ class Attention(Layer):
         dL_dqk_prod = self.softmax.backward(dL_dA)
 
         dL_dQ, dL_dK = self.matmul1.backward(dL_dqk_prod)
-        dL_dQ = dL_dQ.transpose(0, 2, 1)
+        dL_dQ = dL_dQ.transpose(0, 2, 1).copy()
 
         b, d, n = dL_dQ.shape
 
