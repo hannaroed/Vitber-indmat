@@ -1,7 +1,7 @@
 import numpy as np
 
 def onehot(x,m):
-    """
+    """ 
     Input:
     - x : np.array of integers with shape (b,n)
              b is the batch size and 

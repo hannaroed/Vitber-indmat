@@ -85,7 +85,7 @@ class LinearLayer(Layer):
 
         #Initialize weights using a sample from the normal distribution
         #scaled with the init_scale
-        w = np.random.randn(output_size,input_size)*init_scale
+        w = np.random.randn(output_size, input_size) * init_scale
         # outer = nb.typed.Dict.empty(key_type, DictType(entry_type))
         # inner = nb.typed.Dict.empty(key_type, entry_type)
         # inner['w'] = w
@@ -135,7 +135,7 @@ class LinearLayer(Layer):
         grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n)
         """
 
-        b = grad.shape[0]
+        #b = grad.shape[0]
 
         #Compute gradient (average over B batches) of loss wrt weight w: 
         #dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
@@ -290,7 +290,6 @@ class Softmax(Layer):
         S = P / (Q * Q + self.epsilon)
 
         dL_dz = grad * z_l - np.sum(grad * S, axis=1)[:, None, ...] * P
-
         
         return dL_dz
 
@@ -390,8 +389,6 @@ class SelfAttention(Layer):
         self.W_o.step_gd(alpha)
     
 
-
-
 class CrossEntropy(Layer):
 
     def __init__(self, epsilon = 10e-18):
@@ -401,7 +398,7 @@ class CrossEntropy(Layer):
         
 
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
-        """Cross entropy definition in assignment is wrong"""
+        """Cross entropy forward"""
         # y_pred: (batch, d, n)
         # y_true: (batch, n)
         # d = embedding dimension = number of classes
@@ -623,6 +620,8 @@ class FeedForward(Layer):
     ('self_attention', SelfAttention.class_type.instance_type),
     ('feed_forward', FeedForward.class_type.instance_type)
 ])
+
+#Implements both SelfAttention and FeedForward
 class TransformerBlock(Layer):
     def __init__(self, d, k, p):
         self.self_attention = SelfAttention(d, k)
@@ -657,6 +656,7 @@ class Optimizer:
     ('epsilon', nb.float64),
     ('step', nb.int64),
 ])
+
 class Adam(Optimizer):
     def __init__(self, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 3e-4, epsilon: float = 10e-8) -> None:
         self.beta1 = beta1
@@ -697,5 +697,3 @@ class Adam(Optimizer):
 
         # after = parameter['w']
         # print(np.abs(before - after).mean())
-
-
