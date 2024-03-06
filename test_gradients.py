@@ -61,7 +61,7 @@ def test_adam():
 
         correct = y_hat_indices == labels
         accuracy = np.mean(correct)
-        print(f'{accuracy=}, {loss_value=}')
+        print(f'{accuracy=:.5f}, {loss_value=:.5f}')
 
         model.backward(grad_loss)
 

@@ -3,7 +3,15 @@ from neural_network import NeuralNetwork
 from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Adam, Softmax
 from data_generators import get_train_test_sorting
 
-def make_model(r=5, d=10, m=2, L=5, p=128, k=5) -> NeuralNetwork:
+def make_model(r=5, d=10, m=2, L=5, p=128, k=8) -> NeuralNetwork:
+    """
+
+    r: int, number of elements in the input sequence
+    d: int, embedding size
+    m: int, number of elements in the vocabulary
+    k: int, dimension size for query, key and value vectors
+    p: int, hidden dimension for feed forward network
+    """
     n_max = 2 * r - 1
 
     model_layers = []
