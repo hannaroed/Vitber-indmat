@@ -24,8 +24,16 @@ def numba_mean_axis0(a):
     for i in range(a.shape[0]):
         running += a[i, ...]
     return running / a.shape[0]
-    
 
+@njit(inline='always')
+def numba_mean_bias(grad_bias):
+    out = np.zeros(grad_bias.shape[1])
+    for i in range(grad_bias.shape[0]):
+        for j in range(grad_bias.shape[1]):
+            for k in range(grad_bias.shape[2]):
+                out[j] += grad_bias[i, j, k]
+    return out
+    
 
 class Layer:
     """
@@ -72,12 +80,13 @@ outer_type = nb.types.DictType(key_type, inner_type)
 @jitclass([
     ('params', outer_type),
     ('x', nb.float64[:, :, :]),
+    ('has_bias', nb.boolean),
 ])
 class LinearLayer(Layer):
     """
     Linear Layer
     """
-    def __init__(self, input_size, output_size, init_scale = 0.1):
+    def __init__(self, input_size, output_size, has_bias, init_scale = 0.1):
         """
         Constructor takes input size and output size of layer 
         and scale for the weights
@@ -85,19 +94,22 @@ class LinearLayer(Layer):
 
         #Initialize weights using a sample from the normal distribution
         #scaled with the init_scale
+
         w = np.random.randn(output_size,input_size)*init_scale
-        # outer = nb.typed.Dict.empty(key_type, DictType(entry_type))
-        # inner = nb.typed.Dict.empty(key_type, entry_type)
-        # inner['w'] = w
-        # inner['d'] = np.zeros_like(w)
-        # outer['w'] = inner
-        # self.params = outer
         inner = nb.typed.Dict.empty(key_type, entry_type)
         inner['w'] = w
         inner['d'] = np.zeros_like(w)
         params = nb.typed.Dict.empty(key_type, inner_type)
         self.params = params
         self.params['w'] = inner
+        self.has_bias = has_bias
+
+        if has_bias:
+            inner = nb.typed.Dict.empty(key_type, entry_type)
+            bound = 1 / sqrt(input_size)
+            inner['w'] = np.random.uniform(-bound, bound, (output_size, 1))
+            inner['d'] = np.zeros_like(inner['w'])
+            self.params['b'] = inner
 
         # self.params = {"w":{'w':w,
         #                     'd':np.zeros_like(self.w), }}
@@ -126,6 +138,9 @@ class LinearLayer(Layer):
         # Numba
         w = self.params['w']['w']
         y = batched_mm(w, x)
+        if self.has_bias:
+            b = self.params['b']['w']
+            y += b[None, :, :]
         return y
         
     def backward(self, grad):
@@ -138,9 +153,13 @@ class LinearLayer(Layer):
         b = grad.shape[0]
 
         #Compute gradient (average over B batches) of loss wrt weight w: 
+
         #dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
 
         # Original
+        # grad: (b, o, n)
+        # self.x: (b, d, n)
+        # out: (o, d)
         # self.params['w']['d'] = np.einsum('bon,bdn->od', grad, self.x) / b
 
         # Optimized
@@ -148,6 +167,8 @@ class LinearLayer(Layer):
         x_mean = numba_mean_axis0(self.x).T.copy()
         self.params['w']['d'] = grad_mean @ x_mean
 
+        if self.has_bias:
+            self.params['b']['d'] = numba_mean_bias(grad)[:, None]
 
         #Return gradient of loss wrt input of layer
         #dL/dw = w@grad.T
@@ -163,7 +184,6 @@ class LinearLayer(Layer):
         return out
     
 
-# @functools.lru_cache(maxsize=None)
 @njit
 def make_D_matrix(n):
     D = np.zeros((n, n))
@@ -185,7 +205,7 @@ def make_D_matrix(n):
 
 @njit(parallel=True)
 def batched_mm(A, B):
-    """Either a or b or both can have a batch dimension"""
+    """Either A or B or both can have a batch dimension"""
     if A.ndim == 3 and B.ndim == 3:
         ab, ao, ai = A.shape
         bb, bi, bo = B.shape
@@ -238,9 +258,12 @@ class Matmul(Layer):
         # dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
         # dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
 
+        B_T = self.prev_B.transpose(0, 2, 1).copy()
+        A_T = self.prev_A.transpose(0, 2, 1).copy()
+
         # Numba
-        dL_dA = batched_mm(dL_dAB, self.prev_B.transpose(0, 2, 1).copy())
-        dL_dB = batched_mm(self.prev_A.transpose(0, 2, 1).copy(), dL_dAB)
+        dL_dA = batched_mm(dL_dAB, B_T)
+        dL_dB = batched_mm(A_T, dL_dAB)
         return dL_dA, dL_dB
 
 
@@ -307,6 +330,9 @@ class Attention(Layer):
         self.matmul2 = Matmul()
 
     def forward(self, Q, K, V):
+        # queries, keys, values
+        # søkeverdi, sammenligningsverdi, verdi
+        # For every query, compare to all keys, and take from the corresponding value
         b, d, n = Q.shape
         D = make_D_matrix(n)
 
@@ -348,10 +374,10 @@ class Attention(Layer):
 class SelfAttention(Layer):
 
     def __init__(self, d, k):
-        self.W_q = LinearLayer(d, k, 0.1)
-        self.W_k = LinearLayer(d, k, 0.1)
-        self.W_v = LinearLayer(d, k, 0.1)
-        self.W_o = LinearLayer(k, d, 0.1)
+        self.W_q = LinearLayer(d, k, True, 0.1)
+        self.W_k = LinearLayer(d, k, True, 0.1)
+        self.W_v = LinearLayer(d, k, True, 0.1)
+        self.W_o = LinearLayer(k, d, True, 0.1)
 
         self.prev_A: np.ndarray | None = None
 
@@ -383,11 +409,11 @@ class SelfAttention(Layer):
 
         return dL_dz
     
-    def step_gd(self, alpha):
-        self.W_q.step_gd(alpha)
-        self.W_k.step_gd(alpha)
-        self.W_v.step_gd(alpha)
-        self.W_o.step_gd(alpha)
+    def step_gd(self, optimizer):
+        self.W_q.step_gd(optimizer)
+        self.W_k.step_gd(optimizer)
+        self.W_v.step_gd(optimizer)
+        self.W_o.step_gd(optimizer)
     
 
 
@@ -402,9 +428,9 @@ class CrossEntropy(Layer):
 
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
         """Cross entropy definition in assignment is wrong"""
-        # y_pred: (batch, d, n)
+        # y_pred: (batch, m, n)
         # y_true: (batch, n)
-        # d = embedding dimension = number of classes
+        # m = number of classes
 
         # IMPORTANT -- this takes in vectors of indices, and NOT one-hot encoded vectors.
         # This is a more efficient way of doing it
@@ -417,15 +443,15 @@ class CrossEntropy(Layer):
         batch_index = np.arange(y_pred.shape[0])[:, None]
         seq_index = np.arange(y_pred.shape[2])[None, :]
 
+        # per_token_loss: (batch, n)
         per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
         
+        # per_sequence_loss: (batch,)
         per_sequence_loss = per_token_loss.mean(axis=1)
 
         return per_sequence_loss
 
     def backward(self):
-        out = np.zeros_like(self.prev_y_pred)
-
         b, m, n = self.prev_y_pred.shape
 
         # Create one-hot
@@ -480,7 +506,7 @@ class EmbedPosition(Layer):
         """
 
         #Initialize a linear layer for the embedding
-        self.embed = LinearLayer(m,d,init_scale)
+        self.embed = LinearLayer(m,d,False,init_scale)
         #Initialize the position embedding matrix
         self.w = np.random.randn(d,n_max) * init_scale
 
@@ -567,13 +593,13 @@ class FeedForward(Layer):
         self.x: np.ndarray | None = None
 
         #first linear layer with input size d and output size p
-        self.l1 = LinearLayer(d,p,init_scale)
+        self.l1 = LinearLayer(d,p,True,init_scale)
 
         #We use the Relu activation function
         self.activation = Relu()
 
         #second linear layer with input size p and output size d
-        self.l2 = LinearLayer(p,d,init_scale)
+        self.l2 = LinearLayer(p,d,True,init_scale)
 
 
     def forward(self,x):
