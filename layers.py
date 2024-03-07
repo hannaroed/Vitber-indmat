@@ -427,7 +427,6 @@ class CrossEntropy(Layer):
         
 
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
-        """Cross entropy definition in assignment is wrong"""
         # y_pred: (batch, m, n)
         # y_true: (batch, n)
         # m = number of classes
