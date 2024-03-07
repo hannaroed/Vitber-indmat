@@ -15,12 +15,11 @@ def onehot(x,m):
                     x[i,j,k] = 1 if x[i,j] = k, else 0 
                     for all i,j
     """
-
-    b,n = x.shape
+    b, n = x.shape
 
     #Making sure that x is an array of integers
     x = x.astype(int)
-    x_one_hot = np.zeros((b,m,n))
+    x_one_hot = np.zeros((b, m, n))
     x_one_hot[np.arange(b)[:,None],x,np.arange(n)[None,:]] = 1
     return x_one_hot
 
