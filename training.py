@@ -31,7 +31,7 @@ def make_model(r=5, d=10, m=2, L=5, p=128, k=128) -> NeuralNetwork:
     return model
 
 
-def training(model, loss_function, optimizer, data_set, m, n_epochs=15):
+def training(model, loss_function, optimizer, data_set, m, n_epochs=300):
     """Training of neural network in batches"""
 
     # cross_entropy = layers.CrossEntropy(layers.Layer)
@@ -56,6 +56,6 @@ def training(model, loss_function, optimizer, data_set, m, n_epochs=15):
 
 
 test_model = make_model(r=5, d=10, m=2, L=2, p=15, k=5)
-data = get_train_test_sorting(5, 2, 4, 5, 5)
+data = get_train_test_sorting(5, 2, 250, 10, 10)
 print(data)
-#trained_model = training(test_model, CrossEntropy, Adam, data, 2, 15)
+trained_model = training(test_model, CrossEntropy(), Adam(), data, 2, 100)
