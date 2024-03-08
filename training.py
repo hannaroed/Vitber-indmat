@@ -1,7 +1,7 @@
 from tqdm import trange
 from neural_network import NeuralNetwork
 from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Adam, Softmax
-from data_generators import get_train_test_sorting
+from data_generators import get_train_test_sorting, get_train_test_addition
 from utils import onehot
 import numpy as np
 
@@ -34,9 +34,7 @@ def make_model(r=5, d=10, m=2, L=5, p=128, k=128) -> NeuralNetwork:
 def training_sorting(model, loss_function, optimizer, data_set, m, n_epochs=300):
     """Training of neural network in batches"""
 
-    # cross_entropy = layers.CrossEntropy(layers.Layer)
     x_train, y_train = data_set['x_train'], data_set['y_train']
-
     mean_loss_arr = np.zeros(n_epochs)
 
     for epoch in trange(n_epochs):
@@ -60,9 +58,7 @@ def training_sorting(model, loss_function, optimizer, data_set, m, n_epochs=300)
 def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300):
     """Training of neural network in batches"""
 
-    # cross_entropy = layers.CrossEntropy(layers.Layer)
     x_train, y_train = data_set['x_train'], data_set['y_train']
-
     mean_loss_arr = np.zeros(n_epochs)
 
     for epoch in trange(n_epochs):
@@ -72,7 +68,18 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
 
             x = onehot(x, m)
             Y_pred = model.forward(x)
-            loss = loss_function.forward(Y_pred[::-1], y_true)
+            '''
+            print('Y predicted: ')
+            print(Y_pred)
+            print('Y true: ')
+            print(y_true)
+            '''
+            
+            y_pred_1 = Y_pred[-1]
+            y_pred_3 = Y_pred[-3]
+            Y_pred[-1] = y_pred_3
+            Y_pred[-3] = y_pred_1
+            loss = loss_function.forward(Y_pred, y_true)
             dL_dY = loss_function.backward()
             model.backward(dL_dY)
             model.step_gd(optimizer)
@@ -82,3 +89,11 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
         #print("Iteration ", str(epoch), " L = ", mean_loss, "")
 
     return model, mean_loss_arr
+
+n = 10
+
+test_model_add = make_model(r=6, d=30, m=10, L=3, p=40, k=20)
+addition_data = get_train_test_addition(n_digit=2, samples_per_batch=50, n_batches_train=20, n_batches_test=20)
+#print(addition_data)
+
+training_addition(test_model_add, CrossEntropy(), Adam(), addition_data, 10, n_epochs=n)
