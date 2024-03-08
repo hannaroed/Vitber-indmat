@@ -69,9 +69,9 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
 
             x = onehot(x, m)
             Y_pred = model.forward(x)
-        
             first_part = Y_pred[:,:,:-(r+1)]
             last_part_rev = Y_pred[:,:,-(r+1):][:, :, ::-1]
+            #print(first_part.shape, last_part_rev.shape)
             Y_pred_new = np.concatenate((first_part, last_part_rev), axis=2)
             loss = loss_function.forward(Y_pred_new, y_true)
             dL_dY = loss_function.backward()
