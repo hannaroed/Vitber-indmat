@@ -37,6 +37,8 @@ def training(model, loss_function, optimizer, data_set, m, n_epochs=300):
     # cross_entropy = layers.CrossEntropy(layers.Layer)
     x_train, y_train = data_set['x_train'], data_set['y_train']
 
+    mean_loss_arr = np.zeros(n_epochs)
+
     for epoch in trange(n_epochs):
         for batch_idx in range(x_train.shape[0]):
             x = x_train[batch_idx]
@@ -50,12 +52,7 @@ def training(model, loss_function, optimizer, data_set, m, n_epochs=300):
             model.step_gd(optimizer)
 
         mean_loss = np.mean(loss)
-        print("Iteration ", str(epoch), " L = ", mean_loss, "")
+        mean_loss_arr[epoch] = mean_loss
+        #print("Iteration ", str(epoch), " L = ", mean_loss, "")
 
-    return model
-
-
-test_model = make_model(r=5, d=10, m=2, L=2, p=15, k=5)
-data = get_train_test_sorting(5, 2, 250, 10, 10)
-print(data)
-trained_model = training(test_model, CrossEntropy(), Adam(), data, 2, 100)
+    return model, mean_loss_arr

@@ -73,7 +73,7 @@ def get_train_test_sorting(length, num_ints, samples_per_batch,n_batches_train, 
     return data
 
 
-def get_train_test_addition(n_digit,samples_per_batch = 1000,n_batches_train = 3, n_batches_test = 1):
+def get_train_test_addition(n_digit, samples_per_batch = 1000,n_batches_train = 3, n_batches_test = 1):
 
     """
     Generates a dataset for addition (a + b = c) of n_digit numbers.
