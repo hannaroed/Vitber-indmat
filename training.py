@@ -55,7 +55,7 @@ def training_sorting(model, loss_function, optimizer, data_set, m, n_epochs=300)
 
     return model, mean_loss_arr
 
-def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300):
+def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300, r=2):
     """Training of neural network in batches"""
 
     x_train, y_train = data_set['x_train'], data_set['y_train']
@@ -74,12 +74,8 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
             print('Y true: ')
             print(y_true)
             '''
-            
-            y_pred_1 = Y_pred[-1]
-            y_pred_3 = Y_pred[-3]
-            Y_pred[-1] = y_pred_3
-            Y_pred[-3] = y_pred_1
-            loss = loss_function.forward(Y_pred, y_true)
+            last_part = Y_pred[:,:,-(r+1):][:, :, ::-1]
+            loss = loss_function.forward(last_part, y_true)
             dL_dY = loss_function.backward()
             model.backward(dL_dY)
             model.step_gd(optimizer)
