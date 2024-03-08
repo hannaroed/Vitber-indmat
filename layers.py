@@ -2,7 +2,6 @@ from __future__ import annotations
 import numpy as np
 from utils import onehot
 from math import sqrt
-
 from numba import njit
 import numba as nb
 from numba.experimental import jitclass
@@ -114,7 +113,6 @@ class LinearLayer(Layer):
         # self.params = {"w":{'w':w,
         #                     'd':np.zeros_like(self.w), }}
         
-
     def forward(self, x):
         """
         Computes the affine transformation of the forward pass
@@ -306,7 +304,6 @@ class Softmax(Layer):
 
         return z_l
 
-
     def backward(self, grad):
         P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
         
@@ -385,7 +382,6 @@ class SelfAttention(Layer):
 
         self.attention = Attention()
 
-
     def forward(self, z):
         b, k, n = z.shape
 
@@ -398,7 +394,6 @@ class SelfAttention(Layer):
         out = self.W_o.forward(VA)  # (b, d, n)
 
         return out
-
 
     def backward(self, grad):
         dL_dVA = self.W_o.backward(grad)  # (b, k, n)
@@ -416,8 +411,6 @@ class SelfAttention(Layer):
         self.W_o.step_gd(optimizer)
     
 
-
-
 class CrossEntropy(Layer):
 
     def __init__(self, epsilon = 10e-18):
@@ -425,7 +418,6 @@ class CrossEntropy(Layer):
         self.prev_y_pred: np.ndarray | None = None
         self.prev_y: int | None = None
         
-
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
         # y_pred: (batch, m, n)
         # y_true: (batch, n)
@@ -459,8 +451,6 @@ class CrossEntropy(Layer):
         out = - 1/n * (prev_y_oh / (self.prev_y_pred + self.epsilon))
 
         return out
-    
-
 
 
 @jitclass([
@@ -549,7 +539,6 @@ class EmbedPosition(Layer):
             - None
         """
 
-        
         b = grad.shape[0]
 
         #Compute gradient (average over B batches) of loss wrt positional embedding w:
@@ -570,8 +559,6 @@ class EmbedPosition(Layer):
         # Update parameters
         for param in self.params.values():
             optimizer.update(param)
-
-
 
 
 @jitclass([
@@ -599,7 +586,6 @@ class FeedForward(Layer):
 
         #second linear layer with input size p and output size d
         self.l2 = LinearLayer(p,d,True,init_scale)
-
 
     def forward(self,x):
         """
@@ -637,12 +623,12 @@ class FeedForward(Layer):
         #Since forward pass is x + W2.T@Relu(W1@x)
         return grad + grad_feed_forward
 
-
     def step_gd(self,step_size):
  
         #Call the step_gd method of the linear layers
         self.l1.step_gd(step_size)
         self.l2.step_gd(step_size)
+
 
 @jitclass([
     ('self_attention', SelfAttention.class_type.instance_type),
@@ -662,65 +648,7 @@ class TransformerBlock(Layer):
         dL_dz_half = self.feed_forward.backward(grad)
         grad = self.self_attention.backward(dL_dz_half) + dL_dz_half
         return grad
-    
+
     def step_gd(self, optimizer: Optimizer):
         self.self_attention.step_gd(optimizer)
         self.feed_forward.step_gd(optimizer)
-
-
-
-
-class Optimizer:
-    def update(self, parameters: dict[str, np.ndarray]) -> None:
-        raise NotImplementedError
-
-
-@jitclass([
-    ('beta1', nb.float64),
-    ('beta2', nb.float64),
-    ('alpha', nb.float64),
-    ('epsilon', nb.float64),
-    ('step', nb.int64),
-])
-class Adam(Optimizer):
-    def __init__(self, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 3e-4, epsilon: float = 10e-8) -> None:
-        self.beta1 = beta1
-        self.beta2 = beta2
-        self.alpha = alpha
-        self.epsilon = epsilon
-        self.step = 0
-    
-    def reset(self):
-        self.step = 0
-    
-    def update(self, parameter: dict[str, np.ndarray]):
-        """
-        Takes in gradients, parameters, and previous moments and returns the update step and both .
-        """
-        w, grad, m_prev, v_prev = parameter['w'], parameter['d'], parameter.get('m', None), parameter.get('v', None)
-        m_prev = np.zeros_like(w) if m_prev is None else m_prev
-        v_prev = np.zeros_like(w) if v_prev is None else v_prev
-
-        # Use m_prev and v_prev to find m and v
-
-        self.step += 1
-
-        m = self.beta1 * m_prev + (1 - self.beta1) * grad
-        v = self.beta2 * v_prev + (1 - self.beta2) * (grad ** 2)
-
-        m_hat = (1 / (1 - self.beta1**self.step)) * m
-        v_hat = (1 / (1 - self.beta1**self.step)) * v
-
-        step = self.alpha * (m_hat / (np.sqrt(v_hat) + self.epsilon))
-
-        # print(np.abs(step).mean())
-        # before = parameter['w'].copy()
-
-        parameter['w'] -= step
-        parameter['m'] = m
-        parameter['v'] = v
-
-        # after = parameter['w']
-        # print(np.abs(before - after).mean())
-
-
