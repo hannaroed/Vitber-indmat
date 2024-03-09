@@ -5,6 +5,7 @@ from math import sqrt
 from numba import njit
 import numba as nb
 from numba.experimental import jitclass
+from optimizer import Optimizer
 
 @njit(inline='always')
 def numba_max_axis1(a):
@@ -70,8 +71,6 @@ class Layer:
         for param in self.params.values():
             optimizer.update(param)
 
-
-from numba.types import DictType
 
 key_type, entry_type = nb.types.unicode_type, nb.float64[:, :]
 inner_type = nb.types.DictType(key_type, entry_type)
@@ -147,8 +146,6 @@ class LinearLayer(Layer):
 
         grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n)
         """
-
-        b = grad.shape[0]
 
         #Compute gradient (average over B batches) of loss wrt weight w: 
 

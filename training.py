@@ -32,7 +32,7 @@ def make_model(r=5, d=10, m=2, L=5, p=128, k=128) -> NeuralNetwork:
     return model
 
 
-def training_sorting(model, loss_function, optimizer, data_set, m, n_epochs=300):
+def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set, m, n_epochs=300):
     """Training of neural network in batches"""
 
     x_train, y_train = data_set['x_train'], data_set['y_train']
