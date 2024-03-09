@@ -74,7 +74,7 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
             x = x_train[batch_idx]
             y_true = y_train[batch_idx]
 
-            x = onehot(x, m)
+            x = jit_onehot(x, m)
             Y_pred = model.forward(x)
             first_part = Y_pred[:,:,:-(r+1)]
             last_part_rev = Y_pred[:,:,-(r+1):][:, :, ::-1]

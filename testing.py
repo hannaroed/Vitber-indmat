@@ -34,10 +34,8 @@ def test_sorting(trained_model, data_set, m):
         Y_pred = trained_model.forward(X)
         print('Y PRED SHAPE:')
         print(Y_pred.shape)
-        print(Y_pred)
         print('Y TEST SHAPE:')
         print(y_test.shape)
-
 
         # This is wrong, let me explain:
         # batch_idx is the index number of the batch we are looking at. Only one batch gets put through the network at a time,
