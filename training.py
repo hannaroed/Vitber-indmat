@@ -38,13 +38,19 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
     x_train, y_train = data_set['x_train'], data_set['y_train']
     mean_loss_arr = np.zeros(n_epochs)
 
-    for epoch in trange(n_epochs):
+    pbar = trange(n_epochs, desc='Training model')
+
+    for epoch in pbar:
+        correct = 0
+        total = 0
         for batch_idx in range(x_train.shape[0]):
             x = x_train[batch_idx]
             y_true = y_train[batch_idx]
 
             x = jit_onehot(x, m)
             Y_pred = model.forward(x)
+            correct += np.sum(np.argmax(Y_pred, axis=1) == y_true)
+            total += y_true.size
             loss = loss_function.forward(Y_pred, y_true)
             dL_dY = loss_function.backward()
             model.backward(dL_dY)
@@ -52,6 +58,7 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
 
         mean_loss = np.mean(loss)
         mean_loss_arr[epoch] = mean_loss
+        pbar.set_postfix({'loss': mean_loss, 'accuracy': correct / total})
         #print("Iteration ", str(epoch), " L = ", mean_loss, "")
 
     return model, mean_loss_arr
