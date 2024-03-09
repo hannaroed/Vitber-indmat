@@ -90,6 +90,7 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
 
         mean_loss = np.mean(loss)
         mean_loss_arr[epoch] = mean_loss
+        pbar.set_postfix({'loss': mean_loss, 'accuracy': correct / total})
         #print("Iteration ", str(epoch), " L = ", mean_loss, "")
 
     return model, mean_loss_arr

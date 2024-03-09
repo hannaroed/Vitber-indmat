@@ -2,7 +2,6 @@ import numpy as np
 from tqdm import trange
 from typing import Any
 
-
 import layers as l
 from utils import onehot
 from training import make_model, training
@@ -102,8 +101,6 @@ def module_backward_works(input, out_shape: tuple, module):
     # print(grad_output)
     # assert np.allclose((forward_perturbed - forward_result) / delta, grad_output, atol=1e-6)
     
-    
-
 
 def test_backward_correct():
     batch_size = 10
