@@ -1,7 +1,7 @@
 from tqdm import trange
 from neural_network import NeuralNetwork
 from optimizer import Adam
-from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Softmax
+from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Softmax, jit_onehot
 from data_generators import get_train_test_sorting, get_train_test_addition
 from utils import onehot
 import numpy as np
@@ -28,14 +28,10 @@ def test_sorting(trained_model, data_set, m):
         # Turn the input sequence into a one-hot encoded input of shape (batch_size, m, sequence_length)
         # This sequence has m "channels", one for each element in the vocabulary
         # Element [i, j, k] is 1 if the k-th element of the i-th sample sequence is j, 0 otherwise
-        X = onehot(x, m)
+        X = jit_onehot(x, m)
 
         # The predictions are of shape (batch_size, m, sequence_length) because they contain the scores
         Y_pred = trained_model.forward(X)
-        print('Y PRED SHAPE:')
-        print(Y_pred.shape)
-        print('Y TEST SHAPE:')
-        print(y_test.shape)
 
         # This is wrong, let me explain:
         # batch_idx is the index number of the batch we are looking at. Only one batch gets put through the network at a time,
@@ -63,6 +59,39 @@ def test_sorting(trained_model, data_set, m):
         total += is_correct_guess.size
 
     # correct_percentage = (counter/x_test.shape[2])*100
+
+    total_percentage = total_correct / total * 100
+  
+    return total_percentage
+
+def test_addition(trained_model, data_set, m):
+    """Testing of neural network in batches"""
+
+    x_test, y_test = data_set['x_test'], data_set['y_test']
+
+    total_correct, total = 0, 0
+
+    for batch_idx in range(x_test.shape[0]):
+
+
+        x = x_test[batch_idx]  # Get one batch from the dataset, shape (batch_size, sequence_length)
+        y_true = y_test[batch_idx]  # Get the corresponding labels, shape (batch_size, out_sequence_length)
+        
+        X = jit_onehot(x, m)
+
+        # The predictions are of shape (batch_size, m, sequence_length) because they contain the scores
+        Y_pred = trained_model.forward(X)
+
+        y_hat = np.argmax(Y_pred, axis=1)  # Shape (batch_size, sequence_length)
+    
+        y_hat_rev = y_hat[:,:-3][::-1]
+        is_correct_guess = y_hat_rev == y_true  # Shape (batch_size, sequence_length)
+        # The array above is a boolean array, that has a True value at each position where the guess was correct, and a False value otherwise
+
+        # True values are treated as 1, and False values as 0, so we can sum to get the number of correct guesses
+        total_correct += is_correct_guess.sum()
+        total += is_correct_guess.size
+
 
     total_percentage = total_correct / total * 100
   
