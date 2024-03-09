@@ -407,13 +407,34 @@ class SelfAttention(Layer):
         self.W_v.step_gd(optimizer)
         self.W_o.step_gd(optimizer)
     
+@njit(inline='always')
+def numba_mean_axis1(a):
+    # Reduces dims
+    running = np.zeros((a.shape[0],))
+    for i in range(a.shape[1]):
+        running += a[:, i]
+    return running / a.shape[1]
 
+@njit
+def jit_onehot(x, m):
+    b, n = x.shape
+    x_one_hot = np.zeros((b, m, n))
+    for i in range(b):
+        for j in range(n):
+            x_one_hot[i, x[i, j], j] = 1
+    return x_one_hot
+
+@jitclass([
+    ('epsilon', nb.float64),
+    ('prev_y_pred', nb.optional(nb.float64[:, :, :])),
+    ('prev_y', nb.optional(nb.int64[:, :]))
+])
 class CrossEntropy(Layer):
 
     def __init__(self, epsilon = 10e-18):
         self.epsilon = epsilon
         self.prev_y_pred: np.ndarray | None = None
-        self.prev_y: int | None = None
+        self.prev_y: np.ndarray | None = None
         
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
         # y_pred: (batch, m, n)
@@ -428,14 +449,20 @@ class CrossEntropy(Layer):
 
         # out: (batch,)
 
-        batch_index = np.arange(y_pred.shape[0])[:, None]
-        seq_index = np.arange(y_pred.shape[2])[None, :]
+        # batch_index = np.arange(y_pred.shape[0])[:, None]
+        # seq_index = np.arange(y_pred.shape[2])[None, :]
 
         # per_token_loss: (batch, n)
-        per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
+        per_token_loss = np.zeros((y_pred.shape[0], y_pred.shape[2]))
+        for batch_index in range(y_pred.shape[0]):
+            for seq_index in range(y_pred.shape[2]):
+                per_token_loss[batch_index, seq_index] = -np.log(y_pred[batch_index, y_true[batch_index, seq_index], seq_index] + self.epsilon)
+        # per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
         
         # per_sequence_loss: (batch,)
-        per_sequence_loss = per_token_loss.mean(axis=1)
+
+        per_sequence_loss = numba_mean_axis1(per_token_loss)
+        # per_sequence_loss = per_token_loss.mean(axis=1)
 
         return per_sequence_loss
 
@@ -443,7 +470,7 @@ class CrossEntropy(Layer):
         b, m, n = self.prev_y_pred.shape
 
         # Create one-hot
-        prev_y_oh = onehot(self.prev_y, m)
+        prev_y_oh = jit_onehot(self.prev_y, m)
 
         out = - 1/n * (prev_y_oh / (self.prev_y_pred + self.epsilon))
 

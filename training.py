@@ -1,7 +1,7 @@
 from tqdm import trange
 from neural_network import NeuralNetwork
 from optimizer import Adam
-from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Softmax
+from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Softmax, jit_onehot
 from data_generators import get_train_test_sorting, get_train_test_addition
 from utils import onehot
 import numpy as np
@@ -43,7 +43,7 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
             x = x_train[batch_idx]
             y_true = y_train[batch_idx]
 
-            x = onehot(x, m)
+            x = jit_onehot(x, m)
             Y_pred = model.forward(x)
             loss = loss_function.forward(Y_pred, y_true)
             dL_dY = loss_function.backward()
