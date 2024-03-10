@@ -23,7 +23,7 @@ def test_sorting(trained_model, data_set, m):
         # Each element is an integer in the range [0, m-1]
 
         x = x_test[batch_idx]  # Get one batch from the dataset, shape (batch_size, sequence_length)
-        y_true = y_test[batch_idx]  # Get the corresponding labels, shape (batch_size, out_sequence_length)
+        y_true = y_test[batch_idx] # Get the corresponding labels, shape (batch_size, out_sequence_length)
         
         # Turn the input sequence into a one-hot encoded input of shape (batch_size, m, sequence_length)
         # This sequence has m "channels", one for each element in the vocabulary
@@ -84,7 +84,7 @@ def test_addition(trained_model, data_set, m):
 
         y_hat = np.argmax(Y_pred, axis=1)  # Shape (batch_size, sequence_length)
     
-        y_hat_rev = y_hat[:,:-3][::-1]
+        y_hat_rev = y_hat[:,-3:][::-1]
         is_correct_guess = y_hat_rev == y_true  # Shape (batch_size, sequence_length)
         # The array above is a boolean array, that has a True value at each position where the guess was correct, and a False value otherwise
 
