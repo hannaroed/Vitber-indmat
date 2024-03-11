@@ -64,7 +64,7 @@ def numba_mean_axis1(a):
     return running / a.shape[1]
 
 @njit
-def jit_onehot(x, m):
+def _jit_onehot(x, m):
     '''
     Onehot function that can be used with numba.
     '''
@@ -74,6 +74,10 @@ def jit_onehot(x, m):
         for j in range(n):
             x_one_hot[i, x[i, j], j] = 1
     return x_one_hot
+
+def jit_onehot(x, m):
+    x = x.astype(np.int64)
+    return _jit_onehot(x, m)
 
 
 @njit(inline='always')

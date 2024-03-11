@@ -128,9 +128,10 @@ class LinearLayer(Layer):
         # self.params['w']['d'] = np.einsum('bon,bdn->od', grad, self.x) / b
 
         # Numba
-        grad_mean = numba_mean_axis0(grad)
-        x_mean = numba_mean_axis0(self.x).T.copy()
-        self.params['w']['d'] = grad_mean @ x_mean
+        b, o, n = grad.shape
+        grad_mean = np.sum(grad, axis=0) / b
+        x_mean = np.sum(self.x, axis=0) / b
+        self.params['w']['d'] = grad_mean @ x_mean.T
 
         if self.has_bias:
             self.params['b']['d'] = numba_mean_bias(grad)[:, None]
@@ -271,10 +272,12 @@ class Attention(Layer):
         # Q = Q.transpose(0, 2, 1)
         # Q, K, V: (b, k, n)
         # D: (1, n, n)
-        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1).copy(), K) / sqrt(k)
+        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1).copy(), K)
         # qk_prod: (b, n_in, n_out)
 
-        A = self.softmax.forward(qk_prod + D.transpose(0, 2, 1))
+        masked = qk_prod + D
+
+        A = self.softmax.forward(masked)
         # A = self.softmax.forward(qk_prod)
 
         VA = self.matmul2.forward(V, A)
@@ -292,11 +295,6 @@ class Attention(Layer):
         dL_dQ, dL_dK = self.matmul1.backward(dL_dqk_prod)
         dL_dQ = dL_dQ.transpose(0, 2, 1).copy()
 
-        b, d, n = dL_dQ.shape
-
-        dL_dQ /= sqrt(d)
-        dL_dK /= sqrt(d)
-
         return dL_dQ, dL_dK, dL_dV
 
 
@@ -306,7 +304,6 @@ class Attention(Layer):
     ('W_v', LinearLayer.class_type.instance_type),
     ('W_o', LinearLayer.class_type.instance_type),
     ('prev_A', nb.optional(nb.float64[:, :, :])),
-    ('softmax', Softmax.class_type.instance_type),
     ('attention', Attention.class_type.instance_type)
 ])
 class SelfAttention(Layer):
@@ -320,8 +317,6 @@ class SelfAttention(Layer):
         self.W_o = LinearLayer(k, d, True, 0.1)
 
         self.prev_A: np.ndarray | None = None
-
-        self.softmax = Softmax(1e-8)
 
         self.attention = Attention()
 
@@ -394,8 +389,9 @@ class CrossEntropy(Layer):
         for batch_index in range(y_pred.shape[0]):
             for m in range(y_pred.shape[1]):
                 for seq_index in range(y_pred.shape[2]):
-                    if y_true[batch_index, m, seq_index] > 0:
-                        per_token_loss[batch_index, seq_index] -= np.log(y_pred[batch_index, m, seq_index] + self.epsilon)
+                    yt = y_true[batch_index, m, seq_index]
+                    if yt > 0.0:
+                        per_token_loss[batch_index, seq_index] -= yt * np.log(y_pred[batch_index, m, seq_index] + self.epsilon)
         # per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
         
         # per_sequence_loss: (batch,)
@@ -412,8 +408,6 @@ class CrossEntropy(Layer):
         calculates the gradient
         '''
         b, m, n = self.prev_y_pred.shape
-
-        # Create one-hot
 
         out = - 1/n * (self.prev_y / (self.prev_y_pred + self.epsilon))
 
@@ -501,7 +495,7 @@ class EmbedPosition(Layer):
 
         #We assume that n < n_max
         n = X.shape[-1]
-        z_0 = self.embed.forward(X) + self.params['Wp']['w'][None, :,:n]
+        z_0 = self.embed.forward(X) + self.params['Wp']['w'][None, :, :n]
         return z_0
     
     def backward(self, grad):
@@ -518,9 +512,9 @@ class EmbedPosition(Layer):
 
         #Compute gradient (average over B batches) of loss wrt positional embedding w:
         self.params['Wp']['d'] = np.zeros_like(self.w)
-        self.params['Wp']['d'] += np.sum(grad,axis=0)/b
+        self.params['Wp']['d'] += np.sum(grad, axis=0) / b
 
-        #Use backwards pass of the linear layer
+        # Use backwards pass of the linear layer
         self.embed.backward(grad)
 
         #This is always the final layer, so we return None
@@ -582,11 +576,13 @@ class FeedForward(Layer):
 
         self.x = x
 
-        out = x + self.l2.forward(self.activation.forward(self.l1.forward(x)))
+        ff = self.l2.forward(self.activation.forward(self.l1.forward(x)))
+
+        out = x + ff
 
         return out
     
-    def backward(self,grad):
+    def backward(self, grad):
         '''
         Input:
             - grad of shape (b,d,n)
@@ -603,11 +599,11 @@ class FeedForward(Layer):
         # Since forward pass is x + W2.T@Relu(W1@x)
         return grad + grad_feed_forward
 
-    def step_gd(self,step_size):
+    def step_gd(self, optimizer):
  
         # Call the step_gd method of the linear layers
-        self.l1.step_gd(step_size)
-        self.l2.step_gd(step_size)
+        self.l1.step_gd(optimizer)
+        self.l2.step_gd(optimizer)
 
 
 @jitclass([

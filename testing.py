@@ -1,8 +1,11 @@
+from neural_network import NeuralNetwork
 from layers import jit_onehot
+from utils import onehot
 import numpy as np
+from tqdm.auto import trange
 
 
-def test_sorting(trained_model, data_set, m):
+def test_sorting(trained_model: NeuralNetwork, data_set, m, r):
     """Testing of neural network in batches"""
     x_test, y_test = data_set['x_test'], data_set['y_test']
 
@@ -12,21 +15,27 @@ def test_sorting(trained_model, data_set, m):
     # Keep track of all the accuracies
     total_correct, total = 0, 0
 
-    for batch_idx in range(x_test.shape[0]):
+    for batch_idx in trange(x_test.shape[0]):
         # A batch is a group of batch_size samples
         # Each sample is a sequence of elements
         # Each element is an integer in the range [0, m-1]
 
         x = x_test[batch_idx]  # Get one batch from the dataset, shape (batch_size, sequence_length)
-        y_true = y_test[batch_idx] # Get the corresponding labels, shape (batch_size, out_sequence_length)
+        y_true = y_test[batch_idx]
+
+        x_current = x
+        for _ in range(y_true.shape[1]):
+            prediction = trained_model.forward(jit_onehot(x_current, m))
+            prediction_value = np.argmax(prediction, axis=1)[:, -1:]
+            x_current = np.concatenate((x_current, prediction_value), axis=1)
         
+        y_hat = x_current[:, -y_true.shape[1]:]
+
         # Turn the input sequence into a one-hot encoded input of shape (batch_size, m, sequence_length)
         # This sequence has m "channels", one for each element in the vocabulary
         # Element [i, j, k] is 1 if the k-th element of the i-th sample sequence is j, 0 otherwise
-        X = jit_onehot(x, m)
 
         # The predictions are of shape (batch_size, m, sequence_length) because they contain the scores
-        Y_pred = trained_model.forward(X)
 
         # This is wrong, let me explain:
         # batch_idx is the index number of the batch we are looking at. Only one batch gets put through the network at a time,
@@ -41,7 +50,6 @@ def test_sorting(trained_model, data_set, m):
         # The answer we produced is the element index with the highest score at each position in the sequence
         # We compute this by finding the argmax (the index of the highest element) in the sequence
         # Remember that Y_pred is of shape (batch_size, _m_, sequence_length), so the index we find the argmax over is 1
-        y_hat = np.argmax(Y_pred, axis=1)  # Shape (batch_size, sequence_length)
         
         # Now we have an array that contains the guesses that our model made.
         # We can compare this to the ground truth from our dataset
@@ -53,13 +61,11 @@ def test_sorting(trained_model, data_set, m):
         total_correct += is_correct_guess.sum()
         total += is_correct_guess.size
 
-    # correct_percentage = (counter/x_test.shape[2])*100
-
     total_percentage = total_correct / total * 100
   
     return total_percentage
 
-def test_addition(trained_model, data_set, m):
+def test_addition(trained_model: NeuralNetwork, data_set, m):
     """Testing of neural network in batches"""
 
     x_test, y_test = data_set['x_test'], data_set['y_test']
@@ -67,20 +73,20 @@ def test_addition(trained_model, data_set, m):
     total_correct, total = 0, 0
 
     for batch_idx in range(x_test.shape[0]):
-
-
         x = x_test[batch_idx]  # Get one batch from the dataset, shape (batch_size, sequence_length)
         y_true = y_test[batch_idx]  # Get the corresponding labels, shape (batch_size, out_sequence_length)
         
-        X = jit_onehot(x, m)
+        x_current = x
+        for _ in range(y_true.shape[1]):
+            prediction = trained_model.forward(jit_onehot(x_current, m))
+            prediction_value = np.argmax(prediction, axis=1)[:, -1:]
+            x_current = np.concatenate((x_current, prediction_value), axis=1)
+        
+        y_hat = x_current[:, -y_true.shape[1]:]
 
         # The predictions are of shape (batch_size, m, sequence_length) because they contain the scores
-        Y_pred = trained_model.forward(X)
-
-        y_hat = np.argmax(Y_pred, axis=1)  # Shape (batch_size, sequence_length)
     
-        y_hat_rev = y_hat[:,-3:][::-1]
-        is_correct_guess = y_hat_rev == y_true  # Shape (batch_size, sequence_length)
+        is_correct_guess = np.flip(y_hat, axis=1) == y_true  # Shape (batch_size, sequence_length)
         # The array above is a boolean array, that has a True value at each position where the guess was correct, and a False value otherwise
 
         # True values are treated as 1, and False values as 0, so we can sum to get the number of correct guesses

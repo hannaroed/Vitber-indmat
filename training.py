@@ -30,7 +30,7 @@ def make_model(r=5, d=10, m=2, L=5, p=128, k=128) -> NeuralNetwork:
     return model
 
 
-def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set, m, n_epochs=300, r=5):
+def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set, m, r, n_epochs=300):
     """Training of neural network in batches"""
 
     x_train, y_train = data_set['x_train'], data_set['y_train']
@@ -42,17 +42,21 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
         correct = 0
         total = 0
         for batch_idx in range(x_train.shape[0]):
-            x = x_train[batch_idx][:,-r:]
-            y_true = y_train[batch_idx][:,-r:]
+            x = x_train[batch_idx]
+            y_true = y_train[batch_idx]
 
             Y_true = jit_onehot(y_true, m)
+            Y_true_pad = np.pad(Y_true, ((0, 0), (0, 0), (x.shape[1] - Y_true.shape[2], 0)))
 
             X = jit_onehot(x, m)
             Y_pred = model.forward(X)
-            Y_pred = Y_pred[:,:,-r:]
-            correct += np.sum(np.argmax(Y_pred, axis=1) == y_true)
+
+            Y_pred_slice = Y_pred[:, :, -Y_true.shape[2]:]
+            correct += np.sum(np.argmax(Y_pred_slice, axis=1) == y_true)
+
             total += y_true.size
-            loss = loss_function.forward(Y_pred, Y_true)
+
+            loss = loss_function.forward(Y_pred, Y_true_pad)
             dL_dY = loss_function.backward()
 
             model.backward(dL_dY)
@@ -61,11 +65,10 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
         mean_loss = np.mean(loss)
         mean_loss_arr[epoch] = mean_loss
         pbar.set_postfix({'loss': mean_loss, 'accuracy': correct / total})
-        #print("Iteration ", str(epoch), " L = ", mean_loss, "")
 
     return model, mean_loss_arr
 
-def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300, r=2):
+def training_addition(model: NeuralNetwork, loss_function: CrossEntropy, optimizer, data_set, m, n_epochs=300, r=2):
     """Training of neural network in batches"""
 
     x_train, y_train = data_set['x_train'], data_set['y_train']
@@ -76,19 +79,23 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
         correct = 0
         total = 0
         for batch_idx in range(x_train.shape[0]):
-            x = x_train[batch_idx][:,-(r+1):]
-            y_true = y_train[batch_idx][:,-(r+1):]
+            x = x_train[batch_idx]
+            y_true = y_train[batch_idx]
+
             Y_true = jit_onehot(y_true, m)
 
-            x = jit_onehot(x, m)
-            Y_pred = model.forward(Y_true)
-            Y_pred = Y_pred[:,:,-(r+1):]
+            X = jit_onehot(x, m)
+            Y_pred = model.forward(X)
+            Y_pred_slice = Y_pred[:,:,-Y_true.shape[2]:]
 
-            correct += np.sum(np.argmax(Y_pred, axis=1) == y_true)
+            Y_true_pad = np.pad(Y_true, ((0, 0), (0, 0), (Y_pred.shape[2] - Y_true.shape[2], 0)))
+
+            correct += np.sum(np.argmax(Y_pred_slice, axis=1) == y_true)
             total += y_true.size
 
-            loss = loss_function.forward(Y_pred, Y_true)
+            loss = loss_function.forward(Y_pred, Y_true_pad)
             dL_dY = loss_function.backward()
+
             model.backward(dL_dY)
             model.step_gd(optimizer)
 
