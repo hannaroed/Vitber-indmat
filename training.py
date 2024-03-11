@@ -1,9 +1,7 @@
 from tqdm import trange
 from neural_network import NeuralNetwork
 from optimizer import Adam
-from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Softmax, jit_onehot
-from data_generators import get_train_test_sorting, get_train_test_addition
-from utils import onehot
+from layers import CrossEntropy, jit_onehot
 import numpy as np
 
 

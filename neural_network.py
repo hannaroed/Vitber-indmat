@@ -9,12 +9,12 @@ transformer_block_type = TransformerBlock.class_type.instance_type
     ('lm_head', LinearLayer.class_type.instance_type),
     ('out_softmax', Softmax.class_type.instance_type)
 ])
-class NeuralNetwork:
-    """
+class NeuralNetwork: 
+    ''' 
     Neural network class that takes a list of layers
     and performs forward and backward pass, as well
     as gradient descent step.
-    """
+    '''
 
     def __init__(self, r: int = 5, d: int = 10, m: int = 2, L: int = 5, p: int = 128, k: int = 8):
         #layers is a list where each element is of the Layer class
@@ -56,5 +56,3 @@ class NeuralNetwork:
         for block in self.transformer_blocks:
             block.step_gd(optimizer)
         self.lm_head.step_gd(optimizer)
-    
-    
