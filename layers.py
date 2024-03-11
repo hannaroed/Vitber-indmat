@@ -1,73 +1,14 @@
 from __future__ import annotations
 import numpy as np
-from utils import onehot
+from utils import *
 from math import sqrt
-from numba import njit
 import numba as nb
 from numba.experimental import jitclass
 from optimizer import Optimizer
 
-@njit(inline='always')
-def numba_max_axis1(a):
-    '''
-    Finds the max of each row in a 3D matrix
-    '''
-    # Keeps dims
-    assert a.ndim == 3
-    running = np.zeros((a.shape[0], 1, a.shape[2]))
-    for i in range(a.shape[1]):
-        running = np.maximum(running, a[:, i:i+1, ...])
-    return running
-
-@njit(inline='always')
-def numba_mean_axis0(a):
-    '''
-    Finds the mean of each colomn in a 3D matrix
-    '''
-    # Reduces dims
-    assert a.ndim == 3
-    running = np.zeros((a.shape[1], a.shape[2]))
-    for i in range(a.shape[0]):
-        running += a[i, ...]
-    return running / a.shape[0]
-
-@njit(inline='always')
-def numba_mean_axis1(a):
-    '''
-    Finds the mean of each row in a 3D matrix
-    '''
-    # Reduces dims
-    running = np.zeros((a.shape[0],))
-    for i in range(a.shape[1]):
-        running += a[:, i]
-    return running / a.shape[1]
-
-@njit
-def jit_onehot(x, m):
-    '''
-    Made a new opehot function so we can compile with numba
-    '''
-    b, n = x.shape
-    x_one_hot = np.zeros((b, m, n))
-    for i in range(b):
-        for j in range(n):
-            x_one_hot[i, x[i, j], j] = 1
-    return x_one_hot
-
-
-@njit(inline='always')
-def numba_mean_bias(grad_bias):
-    out = np.zeros(grad_bias.shape[1])
-    for i in range(grad_bias.shape[0]):
-        for j in range(grad_bias.shape[1]):
-            for k in range(grad_bias.shape[2]):
-                out[j] += grad_bias[i, j, k]
-    return out
-    
-
 class Layer:
     '''
-    Base class for layers in the neural network with forward and backward pass.
+    Base class for layers in neural network with forward pass, backward pass and a gradient descent step.
     '''
     def __init__(self):
         pass
@@ -101,7 +42,7 @@ class Layer:
         for param in self.params.values():
             optimizer.update(param)
 
-
+# initializing a nesed dictionary with numba
 key_type, entry_type = nb.types.unicode_type, nb.float64[:, :]
 inner_type = nb.types.DictType(key_type, entry_type)
 outer_type = nb.types.DictType(key_type, inner_type)
@@ -114,22 +55,14 @@ outer_type = nb.types.DictType(key_type, inner_type)
 ])
 class LinearLayer(Layer):
     """
-    Linear Layer
-    LinearLayer: Representerer et lag i et nevralt nettverk med flereinnebygde lineærtransformasjoner. Den lagrer tilfeldige weights i en nøstet dictionary.
-    Forward passet tar inn et 3 dimensjonalt x-array og ved hjelp av lineære transformasjon (matrise multiplikasjon) sender den ut ett 3-dimensjonalt y-array.
-    Backward passet finner gradienten av loss funskjonen med hensyn til
+    Layer that contains linear transformations.
 
     """
     def __init__(self, input_size, output_size, has_bias, init_scale = 0.1):
-        '''
-        Constructor takes input size and output size of layer 
-        and scale for the weights
-        '''
 
-        # Initialize weights using a sample from the normal distribution
-        # scaled with the init_scale
-
+        # Initialize weights using a sample from the normal distribution scaled with the init_scale
         w = np.random.randn(output_size,input_size)*init_scale
+        # Making dictionary for storage of parameters
         inner = nb.typed.Dict.empty(key_type, entry_type)
         inner['w'] = w
         inner['d'] = np.zeros_like(w)
@@ -150,7 +83,7 @@ class LinearLayer(Layer):
         
     def forward(self, x):
         '''
-        Computes the affine transformation of the forward pass
+        Computes the affine transformation of the forward pass.
         Stores input for backwards pass and returns output y = Wx.
 
         x: input, array of shape (batch_size, input_size, n) = (b,d,n)
@@ -159,7 +92,8 @@ class LinearLayer(Layer):
 
         self.x = x
         
-        #Return output of layer
+        # Return output of layer
+        
         # Original
         # y = np.einsum('od,bdn->bon', self.params['w']['w'], x)
 
@@ -185,7 +119,7 @@ class LinearLayer(Layer):
 
         #Compute gradient (average over B batches) of loss wrt weight w: 
 
-        #dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
+        # dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
 
         # Original
         # grad: (b, o, n)
@@ -213,58 +147,7 @@ class LinearLayer(Layer):
         w = self.params['w']['w']
         out = batched_mm(w.T.copy(), grad)
         return out
-    
 
-@njit
-def make_D_matrix(n):
-    D = np.zeros((n, n))
-    i1, i2 = np.tril_indices(n, -1)
-    for i, j in zip(i1, i2):
-        D[i, j] = -np.inf
-    return D[None, :, :]
-
-# @njit(inline='always')
-# def double_batched_mm(A, B):
-#     ab, ao, ai = A.shape
-#     bb, bi, bo = B.shape
-#     assert ai == bi
-#     assert ab == bb
-#     out = np.zeros((ab, ao, bo))
-#     for i in range(ab):
-#         out[i] = A[i] @ B[i]
-#     return out
-
-@njit(parallel=True)
-def batched_mm(A, B):
-    '''Either A or B or both can have a batch dimension'''
-    if A.ndim == 3 and B.ndim == 3:
-        ab, ao, ai = A.shape
-        bb, bi, bo = B.shape
-        assert ab == bb
-        assert ai == bi
-        out = np.zeros((ab, ao, bo))
-        for i in nb.prange(ab):
-            out[i] = A[i] @ B[i]
-        return out
-    if A.ndim == 3 and B.ndim == 2:
-        ab, ao, ai = A.shape
-        bi, bo = B.shape
-        assert ai == bi
-        out = np.zeros((ab, ao, bo))
-        for i in nb.prange(ab):
-            out[i] = A[i] @ B
-        return out
-    if A.ndim == 2 and B.ndim == 3:
-        ao, ai = A.shape
-        ab, bi, bo = B.shape
-        assert ai == bi
-        out = np.zeros((ab, ao, bo))
-        for i in nb.prange(ab):
-            out[i] = A @ B[i]
-        return out
-    if A.ndim == 2 and B.ndim == 2:
-        return A @ B
-    raise ValueError("Invalid dimensions")
 
 @jitclass([
     ('prev_A', nb.optional(nb.float64[:, :, :])),
@@ -315,21 +198,24 @@ class Matmul(Layer):
 ])
 class Softmax(Layer):
     '''
-    hei
+    Converts a vector real numbers into into probability distributions.
+    
     '''
 
     def __init__(self, epsilon: float = 1e-8):
         self.epsilon = epsilon
-
         self.prev_Q: np.ndarray | None = None
         self.prev_P: np.ndarray | None = None
         self.prev_z_l: np.ndarray | None = None
     
     def forward(self, x):
-        '''Columnwise softmax operation'''
-        # x: (batch, d, n)
-        # self.x = x
+        '''
+        Columnwise softmax operation.
+        x: (batch, d, n)
 
+        '''
+        
+        # self.x = x
         # shifted = np.where(np.isneginf(x), x, x - np.max(x, axis=1, keepdims=True))
 
         # Numba
@@ -367,15 +253,20 @@ class Softmax(Layer):
     ('matmul2', Matmul.class_type.instance_type)
 ])
 class Attention(Layer):
+    ''' 
+    Deciding what weights
+    '''
     def __init__(self):
         self.softmax = Softmax(1e-8)
         self.matmul1 = Matmul()
         self.matmul2 = Matmul()
 
     def forward(self, Q, K, V):
-        # queries, keys, values
-        # searchinvalue, comparisonvalue, value
+        '''
+        # Q: queries, K: keys, V: values
         # For every query, compare to all keys, and take from the corresponding value
+        '''
+        
         b, d, n = Q.shape
         D = make_D_matrix(n)
 
@@ -390,6 +281,8 @@ class Attention(Layer):
         return VA
     
     def backward(self, dL_dVA):
+        '''
+        '''
         dL_dV, dL_dA = self.matmul2.backward(dL_dVA)
 
         dL_dqk_prod = self.softmax.backward(dL_dA)
@@ -415,7 +308,7 @@ class Attention(Layer):
     ('attention', Attention.class_type.instance_type)
 ])
 class SelfAttention(Layer):
-
+    ''' '''
     def __init__(self, d, k):
         self.W_q = LinearLayer(d, k, True, 0.1)
         self.W_k = LinearLayer(d, k, True, 0.1)
@@ -429,6 +322,8 @@ class SelfAttention(Layer):
         self.attention = Attention()
 
     def forward(self, z):
+        '''
+        '''
         b, k, n = z.shape
 
         Q = self.W_q.forward(z)  # (b, k, n)
@@ -442,6 +337,8 @@ class SelfAttention(Layer):
         return out
 
     def backward(self, grad):
+        '''
+        '''
         dL_dVA = self.W_o.backward(grad)  # (b, k, n)
 
         dL_dQ, dL_dK, dL_dV = self.attention.backward(dL_dVA)  # each (b, k, n)
@@ -463,13 +360,15 @@ class SelfAttention(Layer):
     ('prev_y', nb.optional(nb.int64[:, :]))
 ])
 class CrossEntropy(Layer):
-
+    ''''''
     def __init__(self, epsilon = 10e-18):
         self.epsilon = epsilon
         self.prev_y_pred: np.ndarray | None = None
         self.prev_y: np.ndarray | None = None
         
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
+        '''
+        '''
         # y_pred: (batch, m, n)
         # y_true: (batch, n)
         # m = number of classes
@@ -501,6 +400,8 @@ class CrossEntropy(Layer):
         return per_sequence_loss
 
     def backward(self):
+        '''
+        '''
         b, m, n = self.prev_y_pred.shape
 
         # Create one-hot
@@ -523,18 +424,24 @@ class Relu(Layer):
         pass
 
     def relu(self,x):
-        #relu(x) = max(0,x)
+        '''
+        '''
+        # relu(x) = max(0,x)
         return np.maximum(np.zeros(x.shape), x)
 
     def forward(self,x):
+        '''
+        '''
         
-        #Store input for backwards pass
+        # Store input for backwards pass
         self.x = x
         return self.relu(x)
 
     def backward(self,grad):
+        '''
+        '''
 
-        #dL/dx = grad * relu'(x)
+        # dL/dx = grad * relu'(x)
         return grad * np.where(self.x > 0, np.ones_like(self.x), np.zeros_like(self.x))
 
 
@@ -611,6 +518,8 @@ class EmbedPosition(Layer):
         return None
     
     def step_gd(self, optimizer):
+        '''
+        '''
 
         #We need to call the step_gd method of the linear layer
         self.embed.step_gd(optimizer)

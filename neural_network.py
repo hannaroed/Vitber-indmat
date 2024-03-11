@@ -10,7 +10,7 @@ transformer_block_type = TransformerBlock.class_type.instance_type
     ('out_softmax', Softmax.class_type.instance_type)
 ])
 class NeuralNetwork:
-    '''
+    ''' 
     Neural network class that takes a list of layers
     and performs forward and backward pass, as well
     as gradient descent step.
