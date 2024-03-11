@@ -54,10 +54,10 @@ outer_type = nb.types.DictType(key_type, inner_type)
     ('has_bias', nb.boolean),
 ])
 class LinearLayer(Layer):
-    """
+    '''
     Layer that contains linear transformations.
 
-    """
+    '''
     def __init__(self, input_size, output_size, has_bias, init_scale = 0.1):
 
         # Initialize weights using a sample from the normal distribution scaled with the init_scale
@@ -117,7 +117,7 @@ class LinearLayer(Layer):
         grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n)
         '''
 
-        #Compute gradient (average over B batches) of loss wrt weight w: 
+        # Compute gradient (average over B batches) of loss wrt weight w: 
 
         # dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
 
@@ -135,8 +135,8 @@ class LinearLayer(Layer):
         if self.has_bias:
             self.params['b']['d'] = numba_mean_bias(grad)[:, None]
 
-        #Return gradient of loss wrt input of layer
-        #dL/dw = w@grad.T
+        # Return gradient of loss wrt input of layer
+        # dL/dw = w@grad.T
         # Original
         # return np.einsum('od,bon->bdn', self.params['w']['w'], grad)
 
@@ -199,7 +199,6 @@ class Matmul(Layer):
 class Softmax(Layer):
     '''
     Converts a vector real numbers into into probability distributions.
-    
     '''
 
     def __init__(self, epsilon: float = 1e-8):
@@ -212,7 +211,6 @@ class Softmax(Layer):
         '''
         Columnwise softmax operation.
         x: (batch, d, n)
-
         '''
         
         # self.x = x
@@ -224,7 +222,7 @@ class Softmax(Layer):
 
         P = np.exp(shifted)
         Q = np.sum(P, axis=1)[:, None, ...]
-
+ 
         z_l = P / (Q + self.epsilon)
 
         self.prev_P = P
@@ -254,7 +252,8 @@ class Softmax(Layer):
 ])
 class Attention(Layer):
     ''' 
-    Deciding what weights
+    Deciding how much 'attention' that should be put on different parts of the input.
+    
     '''
     def __init__(self):
         self.softmax = Softmax(1e-8)
@@ -264,7 +263,7 @@ class Attention(Layer):
     def forward(self, Q, K, V):
         '''
         # Q: queries, K: keys, V: values
-        # For every query, compare to all keys, and take from the corresponding value
+        # Returns a weighted sum of the values, adjusted according to the attention weights.
         '''
         
         b, d, n = Q.shape
@@ -282,6 +281,7 @@ class Attention(Layer):
     
     def backward(self, dL_dVA):
         '''
+        Calculates the loss gradient wrt Q, K and V.
         '''
         dL_dV, dL_dA = self.matmul2.backward(dL_dVA)
 
@@ -308,7 +308,9 @@ class Attention(Layer):
     ('attention', Attention.class_type.instance_type)
 ])
 class SelfAttention(Layer):
-    ''' '''
+    '''
+    Combines our linear layers with attention (attention uses softmax).
+    '''
     def __init__(self, d, k):
         self.W_q = LinearLayer(d, k, True, 0.1)
         self.W_k = LinearLayer(d, k, True, 0.1)
@@ -326,13 +328,13 @@ class SelfAttention(Layer):
         '''
         b, k, n = z.shape
 
-        Q = self.W_q.forward(z)  # (b, k, n)
-        K = self.W_k.forward(z)  # (b, k, n)
-        V = self.W_v.forward(z)  # (b, k, n)
+        Q = self.W_q.forward(z) # (b, k, n)
+        K = self.W_k.forward(z) # (b, k, n)
+        V = self.W_v.forward(z) # (b, k, n)
 
-        VA = self.attention.forward(Q, K, V)  # (b, k, n)
+        VA = self.attention.forward(Q, K, V) # (b, k, n)
 
-        out = self.W_o.forward(VA)  # (b, d, n)
+        out = self.W_o.forward(VA) # (b, d, n)
 
         return out
 
@@ -348,6 +350,9 @@ class SelfAttention(Layer):
         return dL_dz
     
     def step_gd(self, optimizer):
+        '''
+        gradien descent on all layers 
+        '''
         self.W_q.step_gd(optimizer)
         self.W_k.step_gd(optimizer)
         self.W_v.step_gd(optimizer)
@@ -360,7 +365,9 @@ class SelfAttention(Layer):
     ('prev_y', nb.optional(nb.int64[:, :]))
 ])
 class CrossEntropy(Layer):
-    ''''''
+    '''
+    Evaluates the error between the model's predictions and the actual results
+    '''
     def __init__(self, epsilon = 10e-18):
         self.epsilon = epsilon
         self.prev_y_pred: np.ndarray | None = None
@@ -368,9 +375,10 @@ class CrossEntropy(Layer):
         
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
         '''
+        Takes in y_pred: (batch, m, n) and y_true: (batch, n)
+        Calculates loss per sequence.
         '''
-        # y_pred: (batch, m, n)
-        # y_true: (batch, n)
+       
         # m = number of classes
 
         # IMPORTANT -- this takes in vectors of indices, and NOT one-hot encoded vectors.
@@ -385,7 +393,7 @@ class CrossEntropy(Layer):
         # seq_index = np.arange(y_pred.shape[2])[None, :]
 
         # per_token_loss: (batch, n)
-        # Dette er raskere med numba enn med numpy
+        # This is faster with numba than numpy
         per_token_loss = np.zeros((y_pred.shape[0], y_pred.shape[2]))
         for batch_index in range(y_pred.shape[0]):
             for seq_index in range(y_pred.shape[2]):
@@ -401,6 +409,7 @@ class CrossEntropy(Layer):
 
     def backward(self):
         '''
+        calculates the gradient
         '''
         b, m, n = self.prev_y_pred.shape
 
@@ -425,23 +434,22 @@ class Relu(Layer):
 
     def relu(self,x):
         '''
+        relu(x) = max(0,x)
         '''
-        # relu(x) = max(0,x)
         return np.maximum(np.zeros(x.shape), x)
 
     def forward(self,x):
         '''
+        Store input for backwards pass
         '''
-        
-        # Store input for backwards pass
+
         self.x = x
         return self.relu(x)
 
     def backward(self,grad):
         '''
+        dL/dx = grad * relu'(x)
         '''
-
-        # dL/dx = grad * relu'(x)
         return grad * np.where(self.x > 0, np.ones_like(self.x), np.zeros_like(self.x))
 
 
@@ -451,7 +459,10 @@ class Relu(Layer):
     ('params', outer_type)
 ])
 class EmbedPosition(Layer):
-    ''''''
+    '''
+
+    '''
+
     def __init__(self, n_max, m, d, init_scale=1e-1):   
 
         '''
@@ -519,9 +530,10 @@ class EmbedPosition(Layer):
     
     def step_gd(self, optimizer):
         '''
+        gradien descent on all the linear layers 
         '''
 
-        #We need to call the step_gd method of the linear layer
+        
         self.embed.step_gd(optimizer)
 
         # Update parameters
@@ -536,7 +548,9 @@ class EmbedPosition(Layer):
     ('x', nb.optional(nb.float64[:, :, :])),
 ])
 class FeedForward(Layer):
-    '''Does'''
+    '''
+    
+    '''
     def __init__(self, d, p, init_scale = 0.1):
         '''
         Input:
@@ -604,7 +618,10 @@ class FeedForward(Layer):
     ('feed_forward', FeedForward.class_type.instance_type)
 ])
 class TransformerBlock(Layer):
-    '''Combines SelfAttention and FeedForward'''
+    '''
+    Combines SelfAttention and FeedForward
+    '''
+
     def __init__(self, d, k, p):
         self.self_attention = SelfAttention(d, k)
         self.feed_forward = FeedForward(d, p, 0.1)

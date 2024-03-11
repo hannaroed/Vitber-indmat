@@ -110,7 +110,9 @@ def make_D_matrix(n):
 @njit(parallel=True)
 def batched_mm(A, B):
     '''
-    Either A or B or both can have a batch dimension
+    A more efficient way to do matrix multiplication than @
+    Either A or B or both can have a batch dimension so we have 4 different scenarios
+
     '''
     if A.ndim == 3 and B.ndim == 3:
         ab, ao, ai = A.shape
