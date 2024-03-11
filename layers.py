@@ -26,6 +26,24 @@ def numba_mean_axis0(a):
     return running / a.shape[0]
 
 @njit(inline='always')
+def numba_mean_axis1(a):
+    # Reduces dims
+    running = np.zeros((a.shape[0],))
+    for i in range(a.shape[1]):
+        running += a[:, i]
+    return running / a.shape[1]
+
+@njit
+def jit_onehot(x, m):
+    b, n = x.shape
+    x_one_hot = np.zeros((b, m, n))
+    for i in range(b):
+        for j in range(n):
+            x_one_hot[i, x[i, j], j] = 1
+    return x_one_hot
+
+
+@njit(inline='always')
 def numba_mean_bias(grad_bias):
     out = np.zeros(grad_bias.shape[1])
     for i in range(grad_bias.shape[0]):
@@ -237,11 +255,20 @@ def batched_mm(A, B):
     ('prev_B', nb.optional(nb.float64[:, :, :])),
 ])
 class Matmul(Layer):
+    """
+    Matrix multiplication layer
+
+    
+    
+    """
     def __init__(self):
         self.prev_A: np.ndarray | None = None
         self.prev_B: np.ndarray | None = None
     
     def forward(self, A, B):
+        """
+        Forward computes matrix product of two input matrices
+        """
         self.prev_A = A
         self.prev_B = B
         # Standard
@@ -251,6 +278,9 @@ class Matmul(Layer):
         return batched_mm(A, B)
     
     def backward(self, dL_dAB):
+        """
+        Backward calculates the gradients of the loss with respect to the input matrices.
+        """
         # Standard
         # dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
         # dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
@@ -302,6 +332,9 @@ class Softmax(Layer):
         return z_l
 
     def backward(self, grad):
+        """
+        Returns gradient with respect to z_l from forward pass
+        """
         P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
         
         S = P / (Q * Q + self.epsilon)
@@ -325,7 +358,7 @@ class Attention(Layer):
 
     def forward(self, Q, K, V):
         # queries, keys, values
-        # søkeverdi, sammenligningsverdi, verdi
+        # searchinvalue, comparisonvalue, value
         # For every query, compare to all keys, and take from the corresponding value
         b, d, n = Q.shape
         D = make_D_matrix(n)
@@ -407,22 +440,6 @@ class SelfAttention(Layer):
         self.W_v.step_gd(optimizer)
         self.W_o.step_gd(optimizer)
     
-@njit(inline='always')
-def numba_mean_axis1(a):
-    # Reduces dims
-    running = np.zeros((a.shape[0],))
-    for i in range(a.shape[1]):
-        running += a[:, i]
-    return running / a.shape[1]
-
-@njit
-def jit_onehot(x, m):
-    b, n = x.shape
-    x_one_hot = np.zeros((b, m, n))
-    for i in range(b):
-        for j in range(n):
-            x_one_hot[i, x[i, j], j] = 1
-    return x_one_hot
 
 @jitclass([
     ('epsilon', nb.float64),
