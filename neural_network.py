@@ -1,8 +1,6 @@
 from layers import EmbedPosition, TransformerBlock, LinearLayer, Softmax
-from numba.types import ListType, Tuple, List
+from numba.types import List
 from numba.experimental import jitclass
-import numba as nb
-# from numba.typed import List
 
 transformer_block_type = TransformerBlock.class_type.instance_type
 @jitclass([
@@ -39,7 +37,7 @@ class NeuralNetwork:
     
     def backward(self, grad):
         """
-        Recursively perform backward pass 
+        Iteratively perform backward pass 
         from grad : derivative of the loss wrt 
         the final output from the forward pass.
         """
@@ -56,7 +54,6 @@ class NeuralNetwork:
         """
         self.embedding.step_gd(optimizer)
         for block in self.transformer_blocks:
-            #Check if layer is of class a class that has parameters
             block.step_gd(optimizer)
         self.lm_head.step_gd(optimizer)
     

@@ -75,6 +75,8 @@ class Layer:
 key_type, entry_type = nb.types.unicode_type, nb.float64[:, :]
 inner_type = nb.types.DictType(key_type, entry_type)
 outer_type = nb.types.DictType(key_type, inner_type)
+
+# jitclass compiles all the methods in the class to make it much faster
 @jitclass([
     ('params', outer_type),
     ('x', nb.float64[:, :, :]),
@@ -157,7 +159,7 @@ class LinearLayer(Layer):
         # out: (o, d)
         # self.params['w']['d'] = np.einsum('bon,bdn->od', grad, self.x) / b
 
-        # Optimized
+        # Numba
         grad_mean = numba_mean_axis0(grad)
         x_mean = numba_mean_axis0(self.x).T.copy()
         self.params['w']['d'] = grad_mean @ x_mean
@@ -282,8 +284,6 @@ class Softmax(Layer):
         # x: (batch, d, n)
         # self.x = x
 
-        # For numerical stability
-        # Standard
         # shifted = np.where(np.isneginf(x), x, x - np.max(x, axis=1, keepdims=True))
 
         # Numba
@@ -453,6 +453,7 @@ class CrossEntropy(Layer):
         # seq_index = np.arange(y_pred.shape[2])[None, :]
 
         # per_token_loss: (batch, n)
+        # Dette er raskere med numba enn med numpy
         per_token_loss = np.zeros((y_pred.shape[0], y_pred.shape[2]))
         for batch_index in range(y_pred.shape[0]):
             for seq_index in range(y_pred.shape[2]):
