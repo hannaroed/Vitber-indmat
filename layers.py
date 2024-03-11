@@ -247,6 +247,8 @@ class Matmul(Layer):
         # Standard
         # return A @ B
 
+        assert A.ndim == 3 and B.ndim == 3
+
         # Numba
         return batched_mm(A, B)
     
@@ -291,7 +293,7 @@ class Softmax(Layer):
         shifted = np.where(np.isneginf(x), x, x - max_vals)
 
         P = np.exp(shifted)
-        Q = np.sum(P, axis=1)[:, None, ...]
+        Q = np.sum(P, axis=1)[:, None, :]
 
         z_l = P / (Q + self.epsilon)
 
@@ -306,8 +308,7 @@ class Softmax(Layer):
         
         S = P / (Q * Q + self.epsilon)
 
-        dL_dz = grad * z_l - np.sum(grad * S, axis=1)[:, None, ...] * P
-
+        dL_dz = grad * z_l - np.sum(grad * S, axis=1)[:, None, :] * P
         
         return dL_dz
 
@@ -327,14 +328,17 @@ class Attention(Layer):
         # queries, keys, values
         # søkeverdi, sammenligningsverdi, verdi
         # For every query, compare to all keys, and take from the corresponding value
-        b, d, n = Q.shape
+        b, k, n = Q.shape
         D = make_D_matrix(n)
 
         # Q = Q.transpose(0, 2, 1)
-        # self.matmuli.noop()
-        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1).copy(), K) / sqrt(d)
+        # Q, K, V: (b, k, n)
+        # D: (1, n, n)
+        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1).copy(), K) / sqrt(k)
+        # qk_prod: (b, n_in, n_out)
 
-        A = self.softmax.forward(qk_prod + D)
+        A = self.softmax.forward(qk_prod + D.transpose(0, 2, 1))
+        # A = self.softmax.forward(qk_prod)
 
         VA = self.matmul2.forward(V, A)
 
@@ -427,7 +431,7 @@ def jit_onehot(x, m):
 @jitclass([
     ('epsilon', nb.float64),
     ('prev_y_pred', nb.optional(nb.float64[:, :, :])),
-    ('prev_y', nb.optional(nb.int64[:, :]))
+    ('prev_y', nb.optional(nb.float64[:, :, :]))
 ])
 class CrossEntropy(Layer):
 
@@ -438,31 +442,30 @@ class CrossEntropy(Layer):
         
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
         # y_pred: (batch, m, n)
-        # y_true: (batch, n)
+        # y_true: (batch, m, n)
         # m = number of classes
-
-        # IMPORTANT -- this takes in vectors of indices, and NOT one-hot encoded vectors.
-        # This is a more efficient way of doing it
 
         self.prev_y_pred = y_pred
         self.prev_y = y_true
 
         # out: (batch,)
 
-        # batch_index = np.arange(y_pred.shape[0])[:, None]
-        # seq_index = np.arange(y_pred.shape[2])[None, :]
-
         # per_token_loss: (batch, n)
         # Dette er raskere med numba enn med numpy
         per_token_loss = np.zeros((y_pred.shape[0], y_pred.shape[2]))
+
         for batch_index in range(y_pred.shape[0]):
-            for seq_index in range(y_pred.shape[2]):
-                per_token_loss[batch_index, seq_index] = -np.log(y_pred[batch_index, y_true[batch_index, seq_index], seq_index] + self.epsilon)
+            for m in range(y_pred.shape[1]):
+                for seq_index in range(y_pred.shape[2]):
+                    if y_true[batch_index, m, seq_index] > 0:
+                        per_token_loss[batch_index, seq_index] -= np.log(y_pred[batch_index, m, seq_index] + self.epsilon)
         # per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
         
         # per_sequence_loss: (batch,)
 
-        per_sequence_loss = numba_mean_axis1(per_token_loss)
+        per_sequence_loss = np.zeros((y_pred.shape[0],))
+        for b in range(y_pred.shape[0]):
+            per_sequence_loss[b] = per_token_loss[b, :].mean()
         # per_sequence_loss = per_token_loss.mean(axis=1)
 
         return per_sequence_loss
@@ -471,9 +474,8 @@ class CrossEntropy(Layer):
         b, m, n = self.prev_y_pred.shape
 
         # Create one-hot
-        prev_y_oh = jit_onehot(self.prev_y, m)
 
-        out = - 1/n * (prev_y_oh / (self.prev_y_pred + self.epsilon))
+        out = - 1/n * (self.prev_y / (self.prev_y_pred + self.epsilon))
 
         return out
 
@@ -491,7 +493,7 @@ class Relu(Layer):
 
     def relu(self,x):
         #relu(x) = max(0,x)
-        return np.maximum(np.zeros(x.shape), x)
+        return np.maximum(0, x)
 
     def forward(self,x):
         
@@ -552,7 +554,7 @@ class EmbedPosition(Layer):
 
         #We assume that n < n_max
         n = X.shape[-1]
-        z_0 = self.embed.forward(X) + self.params['Wp']['w'][:,:n]
+        z_0 = self.embed.forward(X) + self.params['Wp']['w'][None, :,:n]
         return z_0
     
     def backward(self, grad):

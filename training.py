@@ -47,12 +47,14 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
             x = x_train[batch_idx][:,-r:]
             y_true = y_train[batch_idx][:,-r:]
 
+            Y_true = jit_onehot(y_true, m)
+
             X = jit_onehot(x, m)
             Y_pred = model.forward(X)
             Y_pred = Y_pred[:,:,-r:]
             correct += np.sum(np.argmax(Y_pred, axis=1) == y_true)
             total += y_true.size
-            loss = loss_function.forward(Y_pred, y_true)
+            loss = loss_function.forward(Y_pred, Y_true)
             dL_dY = loss_function.backward()
 
             model.backward(dL_dY)
@@ -78,15 +80,16 @@ def training_addition(model, loss_function, optimizer, data_set, m, n_epochs=300
         for batch_idx in range(x_train.shape[0]):
             x = x_train[batch_idx][:,-(r+1):]
             y_true = y_train[batch_idx][:,-(r+1):]
+            Y_true = jit_onehot(y_true, m)
 
             x = jit_onehot(x, m)
-            Y_pred = model.forward(x)
+            Y_pred = model.forward(Y_true)
             Y_pred = Y_pred[:,:,-(r+1):]
 
             correct += np.sum(np.argmax(Y_pred, axis=1) == y_true)
             total += y_true.size
 
-            loss = loss_function.forward(Y_pred, y_true)
+            loss = loss_function.forward(Y_pred, Y_true)
             dL_dY = loss_function.backward()
             model.backward(dL_dY)
             model.step_gd(optimizer)
