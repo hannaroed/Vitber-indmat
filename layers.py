@@ -6,6 +6,7 @@ import numba as nb
 from numba.experimental import jitclass
 from optimizer import Optimizer
 
+
 class Layer:
     '''
     Base class for layers in neural network with forward pass, backward pass and a gradient descent step.
@@ -42,7 +43,7 @@ class Layer:
         for param in self.params.values():
             optimizer.update(param)
 
-# initializing a nesed dictionary with numba
+# initializing a nested dictionary with numba
 key_type, entry_type = nb.types.unicode_type, nb.float64[:, :]
 inner_type = nb.types.DictType(key_type, entry_type)
 outer_type = nb.types.DictType(key_type, inner_type)
@@ -55,11 +56,10 @@ outer_type = nb.types.DictType(key_type, inner_type)
 ])
 class LinearLayer(Layer):
     '''
-    Layer that contains linear transformations.
+    Layer that contains linear transformations
 
     '''
     def __init__(self, input_size, output_size, has_bias, init_scale = 0.1):
-
         # Initialize weights using a sample from the normal distribution scaled with the init_scale
         w = np.random.randn(output_size,input_size)*init_scale
         # Making dictionary for storage of parameters
@@ -198,7 +198,7 @@ class Matmul(Layer):
 ])
 class Softmax(Layer):
     '''
-    Converts a vector real numbers into into probability distributions.
+    Converts a vector with real numbers into into probability distributions
     '''
 
     def __init__(self, epsilon: float = 1e-8):
@@ -252,7 +252,7 @@ class Softmax(Layer):
 ])
 class Attention(Layer):
     ''' 
-    Deciding how much 'attention' that should be put on different parts of the input.
+    Deciding how much 'attention' that should be put on different parts of the input
     
     '''
     def __init__(self):
@@ -263,7 +263,7 @@ class Attention(Layer):
     def forward(self, Q, K, V):
         '''
         # Q: queries, K: keys, V: values
-        # Returns a weighted sum of the values, adjusted according to the attention weights.
+        # Returns a weighted sum of the values, adjusted according to the attention weights
         '''
         
         b, d, n = Q.shape
@@ -281,7 +281,7 @@ class Attention(Layer):
     
     def backward(self, dL_dVA):
         '''
-        Calculates the loss gradient wrt Q, K and V.
+        Calculates the loss gradient with respect to Q, K and V
         '''
         dL_dV, dL_dA = self.matmul2.backward(dL_dVA)
 
@@ -309,7 +309,7 @@ class Attention(Layer):
 ])
 class SelfAttention(Layer):
     '''
-    Combines our linear layers with attention (attention uses softmax).
+    Combines our linear layers with attention 
     '''
     def __init__(self, d, k):
         self.W_q = LinearLayer(d, k, True, 0.1)
@@ -325,6 +325,7 @@ class SelfAttention(Layer):
 
     def forward(self, z):
         '''
+        Forward pass uses linear layers and attention together
         '''
         b, k, n = z.shape
 
@@ -340,6 +341,7 @@ class SelfAttention(Layer):
 
     def backward(self, grad):
         '''
+        Calculates the loss gradient with respect to several layers
         '''
         dL_dVA = self.W_o.backward(grad)  # (b, k, n)
 
@@ -351,7 +353,7 @@ class SelfAttention(Layer):
     
     def step_gd(self, optimizer):
         '''
-        gradien descent on all layers 
+        gradien descent on all linear layers 
         '''
         self.W_q.step_gd(optimizer)
         self.W_k.step_gd(optimizer)
@@ -460,7 +462,7 @@ class Relu(Layer):
 ])
 class EmbedPosition(Layer):
     '''
-
+    First layer, input X = onehot(x)
     '''
 
     def __init__(self, n_max, m, d, init_scale=1e-1):   
@@ -509,6 +511,7 @@ class EmbedPosition(Layer):
     
     def backward(self, grad):
         '''
+        does not return anything since it is the first layer
         Input:
             - grad of shape (b,d,n)
 
@@ -533,7 +536,6 @@ class EmbedPosition(Layer):
         gradien descent on all the linear layers 
         '''
 
-        
         self.embed.step_gd(optimizer)
 
         # Update parameters
@@ -549,7 +551,7 @@ class EmbedPosition(Layer):
 ])
 class FeedForward(Layer):
     '''
-    
+    Consists of linear layers and relu
     '''
     def __init__(self, d, p, init_scale = 0.1):
         '''
@@ -627,15 +629,24 @@ class TransformerBlock(Layer):
         self.feed_forward = FeedForward(d, p, 0.1)
     
     def forward(self, z):
+        '''
+        Combines forward pass from both SelfAttention and FeedForward
+        '''
         z_l_half = self.self_attention.forward(z) + z
         z_l = self.feed_forward.forward(z_l_half) # has resnet connection
         return z_l
 
     def backward(self, grad):
+        '''
+        Returns the gradient by combinding backward from FeedForward and SelfAttention
+        '''
         dL_dz_half = self.feed_forward.backward(grad)
         grad = self.self_attention.backward(dL_dz_half) + dL_dz_half
         return grad
 
     def step_gd(self, optimizer: Optimizer):
+        '''
+        Calling step_gd for its children
+        '''
         self.self_attention.step_gd(optimizer)
         self.feed_forward.step_gd(optimizer)
