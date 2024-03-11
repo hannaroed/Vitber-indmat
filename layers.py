@@ -9,6 +9,9 @@ from optimizer import Optimizer
 
 @njit(inline='always')
 def numba_max_axis1(a):
+    '''
+    Finds the max of each row in a 3D matrix
+    '''
     # Keeps dims
     assert a.ndim == 3
     running = np.zeros((a.shape[0], 1, a.shape[2]))
@@ -18,6 +21,9 @@ def numba_max_axis1(a):
 
 @njit(inline='always')
 def numba_mean_axis0(a):
+    '''
+    Finds the mean of each colomn in a 3D matrix
+    '''
     # Reduces dims
     assert a.ndim == 3
     running = np.zeros((a.shape[1], a.shape[2]))
@@ -27,6 +33,9 @@ def numba_mean_axis0(a):
 
 @njit(inline='always')
 def numba_mean_axis1(a):
+    '''
+    Finds the mean of each row in a 3D matrix
+    '''
     # Reduces dims
     running = np.zeros((a.shape[0],))
     for i in range(a.shape[1]):
@@ -35,6 +44,9 @@ def numba_mean_axis1(a):
 
 @njit
 def jit_onehot(x, m):
+    '''
+    Made a new opehot function so we can compile with numba
+    '''
     b, n = x.shape
     x_one_hot = np.zeros((b, m, n))
     for i in range(b):
@@ -54,9 +66,9 @@ def numba_mean_bias(grad_bias):
     
 
 class Layer:
-    """
+    '''
     Base class for layers in the neural network with forward and backward pass.
-    """
+    '''
     def __init__(self):
         pass
 
@@ -67,7 +79,7 @@ class Layer:
         raise NotImplementedError
     
     def step_gd(self, optimizer: Optimizer): 
-        """
+        '''
         Performs a gradient descent step given learning rate.
         Assumes that the layer has a parameter dictionary "params" on the form
 
@@ -82,7 +94,7 @@ class Layer:
             
         }
         where each parameter has a key 'w' for weights and 'd' for gradients.
-        """
+        '''
         if not hasattr(self, 'params'):
             return
 
@@ -103,15 +115,19 @@ outer_type = nb.types.DictType(key_type, inner_type)
 class LinearLayer(Layer):
     """
     Linear Layer
+    LinearLayer: Representerer et lag i et nevralt nettverk med flereinnebygde lineærtransformasjoner. Den lagrer tilfeldige weights i en nøstet dictionary.
+    Forward passet tar inn et 3 dimensjonalt x-array og ved hjelp av lineære transformasjon (matrise multiplikasjon) sender den ut ett 3-dimensjonalt y-array.
+    Backward passet finner gradienten av loss funskjonen med hensyn til
+
     """
     def __init__(self, input_size, output_size, has_bias, init_scale = 0.1):
-        """
+        '''
         Constructor takes input size and output size of layer 
         and scale for the weights
-        """
+        '''
 
-        #Initialize weights using a sample from the normal distribution
-        #scaled with the init_scale
+        # Initialize weights using a sample from the normal distribution
+        # scaled with the init_scale
 
         w = np.random.randn(output_size,input_size)*init_scale
         inner = nb.typed.Dict.empty(key_type, entry_type)
@@ -133,13 +149,13 @@ class LinearLayer(Layer):
         #                     'd':np.zeros_like(self.w), }}
         
     def forward(self, x):
-        """
+        '''
         Computes the affine transformation of the forward pass
         Stores input for backwards pass and returns output y = Wx.
 
         x: input, array of shape (batch_size, input_size, n) = (b,d,n)
         y: output, array of shape (batch_size, output_size, n) = (b,o,n)
-        """
+        '''
 
         self.x = x
         
@@ -161,11 +177,11 @@ class LinearLayer(Layer):
         return y
         
     def backward(self, grad):
-        """
+        '''
         Performs backward pass.
 
         grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n)
-        """
+        '''
 
         #Compute gradient (average over B batches) of loss wrt weight w: 
 
@@ -220,7 +236,7 @@ def make_D_matrix(n):
 
 @njit(parallel=True)
 def batched_mm(A, B):
-    """Either A or B or both can have a batch dimension"""
+    '''Either A or B or both can have a batch dimension'''
     if A.ndim == 3 and B.ndim == 3:
         ab, ao, ai = A.shape
         bb, bi, bo = B.shape
@@ -255,20 +271,17 @@ def batched_mm(A, B):
     ('prev_B', nb.optional(nb.float64[:, :, :])),
 ])
 class Matmul(Layer):
-    """
+    '''
     Matrix multiplication layer
-
-    
-    
-    """
+    '''
     def __init__(self):
         self.prev_A: np.ndarray | None = None
         self.prev_B: np.ndarray | None = None
     
     def forward(self, A, B):
-        """
+        '''
         Forward computes matrix product of two input matrices
-        """
+        '''
         self.prev_A = A
         self.prev_B = B
         # Standard
@@ -278,9 +291,9 @@ class Matmul(Layer):
         return batched_mm(A, B)
     
     def backward(self, dL_dAB):
-        """
+        '''
         Backward calculates the gradients of the loss with respect to the input matrices.
-        """
+        '''
         # Standard
         # dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
         # dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
@@ -301,6 +314,9 @@ class Matmul(Layer):
     ('prev_z_l', nb.optional(nb.float64[:, :, :])),
 ])
 class Softmax(Layer):
+    '''
+    hei
+    '''
 
     def __init__(self, epsilon: float = 1e-8):
         self.epsilon = epsilon
@@ -310,7 +326,7 @@ class Softmax(Layer):
         self.prev_z_l: np.ndarray | None = None
     
     def forward(self, x):
-        """Columnwise softmax operation"""
+        '''Columnwise softmax operation'''
         # x: (batch, d, n)
         # self.x = x
 
@@ -332,9 +348,9 @@ class Softmax(Layer):
         return z_l
 
     def backward(self, grad):
-        """
+        '''
         Returns gradient with respect to z_l from forward pass
-        """
+        '''
         P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
         
         S = P / (Q * Q + self.epsilon)
@@ -499,9 +515,9 @@ class CrossEntropy(Layer):
     ('x', nb.float64[:, :, :]),
 ])
 class Relu(Layer):
-    """
-    Relu activation function
-    """
+    '''
+    Relu activation function. Makes system non-linear.
+    '''
 
     def __init__(self):
         pass
@@ -528,13 +544,14 @@ class Relu(Layer):
     ('params', outer_type)
 ])
 class EmbedPosition(Layer):
+    ''''''
     def __init__(self, n_max, m, d, init_scale=1e-1):   
 
-        """
+        '''
         n_max: maximum length of input sequence
         m: number of items in the vocabulary / number of integers
         d: embedding dimension
-        """
+        '''
 
         #Initialize a linear layer for the embedding
         self.embed = LinearLayer(m,d,False,init_scale)
@@ -550,7 +567,7 @@ class EmbedPosition(Layer):
 
     def forward(self, X):
 
-        """
+        '''
         Input:
             X: one-hot encoded array of shape (b,m,n).
 
@@ -565,7 +582,7 @@ class EmbedPosition(Layer):
 
         z_0 = W_E@X + W_P[:,:n]
 
-        """
+        '''
 
         #We assume that n < n_max
         n = X.shape[-1]
@@ -573,13 +590,13 @@ class EmbedPosition(Layer):
         return z_0
     
     def backward(self, grad):
-        """
+        '''
         Input:
             - grad of shape (b,d,n)
 
         Output:
             - None
-        """
+        '''
 
         b = grad.shape[0]
 
@@ -610,27 +627,28 @@ class EmbedPosition(Layer):
     ('x', nb.optional(nb.float64[:, :, :])),
 ])
 class FeedForward(Layer):
+    '''Does'''
     def __init__(self, d, p, init_scale = 0.1):
-        """
+        '''
         Input:
             d: input dimension of first layer and output of second
             p: output dimension of first and input of second.
 
-        """
+        '''
 
         self.x: np.ndarray | None = None
 
-        #first linear layer with input size d and output size p
+        # first linear layer with input size d and output size p
         self.l1 = LinearLayer(d,p,True,init_scale)
 
-        #We use the Relu activation function
+        # We use the Relu activation function
         self.activation = Relu()
 
-        #second linear layer with input size p and output size d
+        # second linear layer with input size p and output size d
         self.l2 = LinearLayer(p,d,True,init_scale)
 
     def forward(self,x):
-        """
+        '''
         Input:
             - x of shape (b,d,n)
         Output:
@@ -640,7 +658,7 @@ class FeedForward(Layer):
         y = x + W2.T@Relu(W1@x)
 
          (W1,W2 are p x d)
-        """
+        '''
 
         self.x = x
 
@@ -649,25 +667,25 @@ class FeedForward(Layer):
         return out
     
     def backward(self,grad):
-        """
+        '''
         Input:
             - grad of shape (b,d,n)
 
         Output:
             - derivative of loss wrt input x. Shape (b,d,n)
         
-        """
+        '''
 
-        #We use backward pass of the linear layers and activation.
-        #Recall that the backward pass reverse the order of the layers. 
+        # We use backward pass of the linear layers and activation.
+        # Recall that the backward pass reverse the order of the layers. 
         grad_feed_forward = self.l1.backward(self.activation.backward(self.l2.backward(grad)))
 
-        #Since forward pass is x + W2.T@Relu(W1@x)
+        # Since forward pass is x + W2.T@Relu(W1@x)
         return grad + grad_feed_forward
 
     def step_gd(self,step_size):
  
-        #Call the step_gd method of the linear layers
+        # Call the step_gd method of the linear layers
         self.l1.step_gd(step_size)
         self.l2.step_gd(step_size)
 
@@ -677,6 +695,7 @@ class FeedForward(Layer):
     ('feed_forward', FeedForward.class_type.instance_type)
 ])
 class TransformerBlock(Layer):
+    '''Combines SelfAttention and FeedForward'''
     def __init__(self, d, k, p):
         self.self_attention = SelfAttention(d, k)
         self.feed_forward = FeedForward(d, p, 0.1)
