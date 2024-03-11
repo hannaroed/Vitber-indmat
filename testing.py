@@ -1,11 +1,6 @@
-from tqdm import trange
-from neural_network import NeuralNetwork
-from optimizer import Adam
-from layers import EmbedPosition, TransformerBlock, LinearLayer, CrossEntropy, Softmax, jit_onehot
-from data_generators import get_train_test_sorting, get_train_test_addition
-from utils import onehot
+from layers import jit_onehot
 import numpy as np
-from layers import numba_max_axis1
+
 
 def test_sorting(trained_model, data_set, m):
     """Testing of neural network in batches"""
