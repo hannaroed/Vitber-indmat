@@ -495,7 +495,7 @@ class Relu(Layer):
 ])
 class EmbedPosition(Layer):
     '''
-    Initializes an embedding layer and a positional encoding matrix.
+    Layer at the start of the model for embedding and positioning.
 
     '''
 
@@ -511,8 +511,8 @@ class EmbedPosition(Layer):
         # Initialize a linear layer for the embedding
         self.embed = LinearLayer(m,d,False,init_scale)
 
-        # Initialize the position embedding matrix
-        self.w = np.random.randn(d,n_max) * init_scale
+        # Initialize the position matrix
+        self.w = np.random.randn(d, n_max) * init_scale
 
         # Initialize the parameter dictionary for weight with key "Wp"
         self.params = nb.typed.Dict.empty(key_type, inner_type)
@@ -525,7 +525,7 @@ class EmbedPosition(Layer):
 
         '''
         Input:
-            X: one-hot encoded array of shape (b,m,n).
+            X: one-hot encoded array of shape (b,m,n)
 
         Output:
             z_0: array of shape (b,d,n)
@@ -557,7 +557,7 @@ class EmbedPosition(Layer):
 
         b = grad.shape[0]
 
-        #Compute gradient (average over B batches) of loss wrt positional embedding w
+        # Compute gradient (average over B batches) of loss wrt positional embedding w
         self.params['Wp']['d'] = np.zeros_like(self.w)
         self.params['Wp']['d'] += np.sum(grad, axis=0) / b
 
@@ -600,13 +600,13 @@ class FeedForward(Layer):
 
         self.x: np.ndarray | None = None
 
-        # first linear layer with input size d and output size p
+        # First linear layer with input size d and output size p
         self.l1 = LinearLayer(d,p,True,init_scale)
 
         # We use the Relu activation function
         self.activation = Relu()
 
-        # second linear layer with input size p and output size d
+        # Second linear layer with input size p and output size d
         self.l2 = LinearLayer(p,d,True,init_scale)
 
     def forward(self,x):
@@ -626,7 +626,6 @@ class FeedForward(Layer):
         self.x = x
 
         ff = self.l2.forward(self.activation.forward(self.l1.forward(x)))
-
         out = x + ff
 
         return out
@@ -641,8 +640,8 @@ class FeedForward(Layer):
         
         '''
 
-        # We use backward pass of the linear layers and activation
-        # Recall that the backward pass reverse the order of the layers
+        # Using backward pass of the linear layers and activation
+        # Note: Recall that the backward pass reverses the order of the layers
         grad_feed_forward = self.l1.backward(self.activation.backward(self.l2.backward(grad)))
 
         # Since forward pass is x + W2.T@Relu(W1@x)
@@ -676,13 +675,13 @@ class TransformerBlock(Layer):
         '''
         z_l_half = self.self_attention.forward(z) + z
 
-        # Has resnet connection
+        # Has ResNet connection
         z_l = self.feed_forward.forward(z_l_half) 
         return z_l
 
     def backward(self, grad):
         '''
-        Returns the gradient by combinding backward from FeedForward and SelfAttention.
+        Returns the loss gradient (wrt z) by combinding backward from FeedForward and SelfAttention.
 
         '''
         dL_dz_half = self.feed_forward.backward(grad)
@@ -690,9 +689,7 @@ class TransformerBlock(Layer):
         return grad
 
     def step_gd(self, optimizer: Optimizer):
-        '''
-        Calling step_gd for its children classes.
 
-        '''
+        # Call step_gd for SelfAttention and FeedForward
         self.self_attention.step_gd(optimizer)
         self.feed_forward.step_gd(optimizer)
