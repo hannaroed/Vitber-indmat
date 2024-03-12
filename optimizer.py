@@ -4,8 +4,8 @@ from numba.experimental import jitclass
 
 class Optimizer:
     '''
-    A parent class for optimizers, gjør koden mer generell.
-    Makes it possible to implement several optimizealgorithms.
+    A parent class for optimizers.
+    Makes it possible to implement several optimize algorithms.
 
     '''
     def update(self, parameters: dict[str, np.ndarray]) -> None:
@@ -21,7 +21,8 @@ class Optimizer:
 ])
 class Adam(Optimizer):
     '''
-    Optimize algorithm
+    Adam optimize algorithm.
+
     '''
     def __init__(self, beta1: float = 0.9, beta2: float = 0.999, alpha: float = 3e-4, epsilon: float = 10e-8) -> None:
         self.beta1 = beta1
@@ -34,10 +35,10 @@ class Adam(Optimizer):
         self.step = 0
     
     def update(self, parameter: dict[str, np.ndarray]):
-        """
+        '''
         Takes in gradients, parameters, and previous moments and returns the update step and both.
 
-        """
+        '''
         w, grad, m_prev, v_prev = parameter['w'], parameter['d'], parameter.get('m', None), parameter.get('v', None)
         m_prev = np.zeros_like(w) if m_prev is None else m_prev
         v_prev = np.zeros_like(w) if v_prev is None else v_prev

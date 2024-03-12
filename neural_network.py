@@ -11,14 +11,13 @@ transformer_block_type = TransformerBlock.class_type.instance_type
 ])
 class NeuralNetwork: 
     ''' 
-    Neural network class that combine layers for Embedding, Transformerblock, LinearLayer and Softmax.
-    Performs forward and backward pass, as well as gradient descent step.
+    Neural network that combines the layers: EmbedPosition, Transformerblock, LinearLayer and Softmax.
+    Includes forward and backward pass, as well as gradient descent step.
 
     '''
 
     def __init__(self, r: int = 5, d: int = 10, m: int = 2, L: int = 5, p: int = 128, k: int = 8):
 
-        
         n_max = 2 * r - 1
         self.embedding = EmbedPosition(n_max, m, d, 0.1)
         self.transformer_blocks = [TransformerBlock(d, k, p)]
@@ -42,11 +41,11 @@ class NeuralNetwork:
         return x
     
     def backward(self, grad):
-        """
+        '''
         Perform backward pass through the network.
-        From grad : derivative of the loss wrt the final output from the forward pass.
+        From grad calculate derivative of the loss wrt the final output from the forward pass.
 
-        """
+        '''
         dL_dx = self.out_softmax.backward(grad)
         dL_dx = self.lm_head.backward(dL_dx)
         for i in range(len(self.transformer_blocks) - 1, -1, -1):
@@ -55,9 +54,10 @@ class NeuralNetwork:
         return dL_dx
     
     def step_gd(self, optimizer):
-        """
+        '''
         Perform a gradient descent step for each layer.
-        """
+        
+        '''
 
         self.embedding.step_gd(optimizer)
         for block in self.transformer_blocks:
