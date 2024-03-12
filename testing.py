@@ -6,13 +6,16 @@ from tqdm.auto import trange
 
 
 def test_sorting(trained_model: NeuralNetwork, data_set, m, r):
-    """Testing of neural network in batches"""
+    '''
+    Testing sorting of neural network in batches.
+    
+    '''
     x_test, y_test = data_set['x_test'], data_set['y_test']
 
     # The entire dataset is of shape x: (num_batches, batch_size, sequence_length)
     # y: (num_batches, batch_size, sequence_length)
 
-    # Keep track of all the accuracies
+    # Keeping track of all the accuracies
     total_correct, total = 0, 0
 
     for batch_idx in trange(x_test.shape[0]):
@@ -31,33 +34,9 @@ def test_sorting(trained_model: NeuralNetwork, data_set, m, r):
         
         y_hat = x_current[:, -y_true.shape[1]:]
 
-        # Turn the input sequence into a one-hot encoded input of shape (batch_size, m, sequence_length)
-        # This sequence has m "channels", one for each element in the vocabulary
-        # Element [i, j, k] is 1 if the k-th element of the i-th sample sequence is j, 0 otherwise
-
-        # The predictions are of shape (batch_size, m, sequence_length) because they contain the scores
-
-        # This is wrong, let me explain:
-        # batch_idx is the index number of the batch we are looking at. Only one batch gets put through the network at a time,
-        # so it doesn't make sense to index the output with the batch index
-        # Further, .all() is a method that returns True (just one boolean, not an array) if all elements in the array are True, and False otherwise.
-        # This array is not a boolean array.
-        # if (Y_pred[batch_idx].all() == y_true[batch_idx][i].all()):
-        #     counter+=1
-
-        # We need to compare the predictions to what we were expecting to see
-        # Our output is a set of scores for each element in the vocabulary, for each position in the sequence
-        # The answer we produced is the element index with the highest score at each position in the sequence
-        # We compute this by finding the argmax (the index of the highest element) in the sequence
-        # Remember that Y_pred is of shape (batch_size, _m_, sequence_length), so the index we find the argmax over is 1
-        
-        # Now we have an array that contains the guesses that our model made.
-        # We can compare this to the ground truth from our dataset
-
         is_correct_guess = y_hat == y_true  # Shape (batch_size, sequence_length)
-        # The array above is a boolean array, that has a True value at each position where the guess was correct, and a False value otherwise
 
-        # True values are treated as 1, and False values as 0, so we can sum to get the number of correct guesses
+        # Sum up to get the number of correct guesses
         total_correct += is_correct_guess.sum()
         total += is_correct_guess.size
 
@@ -66,15 +45,19 @@ def test_sorting(trained_model: NeuralNetwork, data_set, m, r):
     return total_percentage
 
 def test_addition(trained_model: NeuralNetwork, data_set, m):
-    """Testing of neural network in batches"""
+    '''
+    Testing of neural network in batches.
+    
+    '''
 
     x_test, y_test = data_set['x_test'], data_set['y_test']
 
+    # Keeping track of all the accuracies
     total_correct, total = 0, 0
 
     for batch_idx in range(x_test.shape[0]):
         x = x_test[batch_idx]  # Get one batch from the dataset, shape (batch_size, sequence_length)
-        y_true = y_test[batch_idx]  # Get the corresponding labels, shape (batch_size, out_sequence_length)
+        y_true = y_test[batch_idx]  # Shape (batch_size, out_sequence_length)
         
         x_current = x
         for _ in range(y_true.shape[1]):
@@ -82,14 +65,12 @@ def test_addition(trained_model: NeuralNetwork, data_set, m):
             prediction_value = np.argmax(prediction, axis=1)[:, -1:]
             x_current = np.concatenate((x_current, prediction_value), axis=1)
         
+        # The predictions are of shape (batch_size, m, sequence_length)
         y_hat = x_current[:, -y_true.shape[1]:]
-
-        # The predictions are of shape (batch_size, m, sequence_length) because they contain the scores
     
         is_correct_guess = np.flip(y_hat, axis=1) == y_true  # Shape (batch_size, sequence_length)
-        # The array above is a boolean array, that has a True value at each position where the guess was correct, and a False value otherwise
 
-        # True values are treated as 1, and False values as 0, so we can sum to get the number of correct guesses
+        # Sum up to get the number of correct guesses
         total_correct += is_correct_guess.sum()
         total += is_correct_guess.size
 

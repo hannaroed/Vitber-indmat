@@ -492,7 +492,10 @@ class Relu(Layer):
 ])
 class EmbedPosition(Layer):
     '''
+    Embedding and positioning layer.
+
     First layer, input X = onehot(x)
+
     '''
 
     def __init__(self, n_max, m, d, init_scale=1e-1):   
@@ -501,14 +504,15 @@ class EmbedPosition(Layer):
         n_max: maximum length of input sequence
         m: number of items in the vocabulary / number of integers
         d: embedding dimension
+
         '''
 
-        #Initialize a linear layer for the embedding
+        # Initialize a linear layer for the embedding
         self.embed = LinearLayer(m,d,False,init_scale)
-        #Initialize the position embedding matrix
+        # Initialize the position embedding matrix
         self.w = np.random.randn(d,n_max) * init_scale
 
-        #Initialize the parameter dictionary for weight with key "Wp"
+        # Initialize the parameter dictionary for weight with key "Wp"
         self.params = nb.typed.Dict.empty(key_type, inner_type)
         self.params['Wp'] = nb.typed.Dict.empty(key_type, entry_type)
         self.params['Wp']['w'] = self.w
@@ -534,14 +538,14 @@ class EmbedPosition(Layer):
 
         '''
 
-        #We assume that n < n_max
+        # We assume that n < n_max
         n = X.shape[-1]
         z_0 = self.embed.forward(X) + self.params['Wp']['w'][None, :, :n]
         return z_0
     
     def backward(self, grad):
         '''
-        does not return anything since it is the first layer
+        Does not return anything since it is the first layer
         Input:
             - grad of shape (b,d,n)
 
@@ -558,12 +562,13 @@ class EmbedPosition(Layer):
         # Use backwards pass of the linear layer
         self.embed.backward(grad)
 
-        #This is always the final layer, so we return None
+        # This is always the final layer, so we return None
         return None
     
     def step_gd(self, optimizer):
         '''
-        gradien descent on all the linear layers 
+        Gradient descent on all the linear layers.
+
         '''
 
         self.embed.step_gd(optimizer)
