@@ -428,6 +428,7 @@ class CrossEntropy(Layer):
             for m in range(y_pred.shape[1]):
                 for seq_index in range(y_pred.shape[2]):
                     yt = y_true[batch_index, m, seq_index]
+                    # checks if it is the padded part of y_true, and if it is we do not add the loss
                     if yt > 0.0:
                         per_token_loss[batch_index, seq_index] -= yt * np.log(y_pred[batch_index, m, seq_index] + self.epsilon)
         # per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
