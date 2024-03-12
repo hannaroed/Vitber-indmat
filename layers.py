@@ -10,6 +10,7 @@ from optimizer import Optimizer
 class Layer:
     '''
     Base class for layers in neural network with forward pass, backward pass and a gradient descent step.
+
     '''
     def __init__(self):
         pass
@@ -22,7 +23,8 @@ class Layer:
     
     def step_gd(self, optimizer: Optimizer): 
         '''
-        Performs a gradient descent step given learning rate.
+        Performs a gradient descent step given an optimizer with a learning rate.
+
         Assumes that the layer has a parameter dictionary "params" on the form
 
         params = {
@@ -33,9 +35,10 @@ class Layer:
                 'v': v          The second moment of the gradient
                 },
             'w2': {....},
-            
         }
+
         where each parameter has a key 'w' for weights and 'd' for gradients.
+
         '''
         if not hasattr(self, 'params'):
             return
@@ -43,12 +46,12 @@ class Layer:
         for param in self.params.values():
             optimizer.update(param)
 
-# initializing a nested dictionary with numba
+# Initializing a nested dictionary with numba
 key_type, entry_type = nb.types.unicode_type, nb.float64[:, :]
 inner_type = nb.types.DictType(key_type, entry_type)
 outer_type = nb.types.DictType(key_type, inner_type)
 
-# jitclass compiles all the methods in the class to make it much faster
+# jitclass compiles all the methods in the class to make them much faster
 @jitclass([
     ('params', outer_type),
     ('x', nb.float64[:, :, :]),
@@ -56,12 +59,14 @@ outer_type = nb.types.DictType(key_type, inner_type)
 ])
 class LinearLayer(Layer):
     '''
-    Layer that contains linear transformations
+    Layer that contains linear transformations.
 
     '''
     def __init__(self, input_size, output_size, has_bias, init_scale = 0.1):
+
         # Initialize weights using a sample from the normal distribution scaled with the init_scale
         w = np.random.randn(output_size,input_size)*init_scale
+
         # Making dictionary for storage of parameters
         inner = nb.typed.Dict.empty(key_type, entry_type)
         inner['w'] = w
@@ -70,7 +75,10 @@ class LinearLayer(Layer):
         self.params = params
         self.params['w'] = inner
         self.has_bias = has_bias
+        # self.params = {'w':{'w':w,
+        #                     'd':np.zeros_like(self.w), }}
 
+        # Adds bias to dictionary if has_bias is set to True
         if has_bias:
             inner = nb.typed.Dict.empty(key_type, entry_type)
             bound = 1 / sqrt(input_size)
@@ -78,31 +86,28 @@ class LinearLayer(Layer):
             inner['d'] = np.zeros_like(inner['w'])
             self.params['b'] = inner
 
-        # self.params = {"w":{'w':w,
-        #                     'd':np.zeros_like(self.w), }}
         
     def forward(self, x):
         '''
         Computes the affine transformation of the forward pass.
-        Stores input for backwards pass and returns output y = Wx.
+        Stores input for backwards pass and returns output of layer, y = Wx.
 
         x: input, array of shape (batch_size, input_size, n) = (b,d,n)
         y: output, array of shape (batch_size, output_size, n) = (b,o,n)
+
         '''
 
         self.x = x
         
-        # Return output of layer
-        
-        # Original
+        # Original:
         # y = np.einsum('od,bdn->bon', self.params['w']['w'], x)
 
-        # Efficient
+        # Efficient:
         # w = self.params['w']['w']
         # w = w[None, :, :]
         # y = w @ x
 
-        # Numba
+        # Numba:
         w = self.params['w']['w']
         y = batched_mm(w, x)
         if self.has_bias:
@@ -113,84 +118,44 @@ class LinearLayer(Layer):
     def backward(self, grad):
         '''
         Performs backward pass.
+        Returns gradient of loss wrt input of layer.
 
-        grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n)
+        grad: gradient of loss wrt output of layer, shape (batch_size, output_size, n) = (b,o,n).
+       
         '''
 
         # Compute gradient (average over B batches) of loss wrt weight w: 
-
         # dL/dw = (1/B)*sum_b^B (grad_b@x_b^T)
 
-        # Original
+        # Original:
         # grad: (b, o, n)
         # self.x: (b, d, n)
         # out: (o, d)
         # self.params['w']['d'] = np.einsum('bon,bdn->od', grad, self.x) / b
 
-        # Numba
+        # Numba:
         b, o, n = grad.shape
         grad_mean = np.sum(grad, axis=0) / b
         x_mean = np.sum(self.x, axis=0) / b
         self.params['w']['d'] = grad_mean @ x_mean.T
 
+        # Finds mean bias and updates value if has_bias is True
         if self.has_bias:
             self.params['b']['d'] = numba_mean_bias(grad)[:, None]
 
-        # Return gradient of loss wrt input of layer
+        # Return gradient of loss wrt input of layer: 
         # dL/dw = w@grad.T
-        # Original
+            
+        # Original:
         # return np.einsum('od,bon->bdn', self.params['w']['w'], grad)
 
-        # Optimized
+        # Optimized:
         # out = self.params['w']['w'].T @ grad
 
-        # Numba
+        # Numba:
         w = self.params['w']['w']
         out = batched_mm(w.T.copy(), grad)
         return out
-
-
-@jitclass([
-    ('prev_A', nb.optional(nb.float64[:, :, :])),
-    ('prev_B', nb.optional(nb.float64[:, :, :])),
-])
-class Matmul(Layer):
-    '''
-    Matrix multiplication layer
-    '''
-    def __init__(self):
-        self.prev_A: np.ndarray | None = None
-        self.prev_B: np.ndarray | None = None
-    
-    def forward(self, A, B):
-        '''
-        Forward computes matrix product of two input matrices
-        '''
-        self.prev_A = A
-        self.prev_B = B
-        # Standard
-        # return A @ B
-
-        assert A.ndim == 3 and B.ndim == 3
-
-        # Numba
-        return batched_mm(A, B)
-    
-    def backward(self, dL_dAB):
-        '''
-        Backward calculates the gradients of the loss with respect to the input matrices.
-        '''
-        # Standard
-        # dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
-        # dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
-
-        B_T = self.prev_B.transpose(0, 2, 1).copy()
-        A_T = self.prev_A.transpose(0, 2, 1).copy()
-
-        # Numba
-        dL_dA = batched_mm(dL_dAB, B_T)
-        dL_dB = batched_mm(A_T, dL_dAB)
-        return dL_dA, dL_dB
 
 
 @jitclass([
@@ -201,11 +166,14 @@ class Matmul(Layer):
 ])
 class Softmax(Layer):
     '''
-    Converts a vector with real numbers into into probability distributions
+    Converts each vector with real numbers into a probability distribution.
+    
     '''
 
     def __init__(self, epsilon: float = 1e-8):
         self.epsilon = epsilon
+
+        # Initializing previous values as None, that later will be numpy arrays
         self.prev_Q: np.ndarray | None = None
         self.prev_P: np.ndarray | None = None
         self.prev_z_l: np.ndarray | None = None
@@ -213,13 +181,16 @@ class Softmax(Layer):
     def forward(self, x):
         '''
         Columnwise softmax operation.
-        x: (batch, d, n)
+
+        x: input, (batch, d, n)
+        
         '''
         
+        # Standard:
         # self.x = x
         # shifted = np.where(np.isneginf(x), x, x - np.max(x, axis=1, keepdims=True))
 
-        # Numba
+        # Numba:
         max_vals = numba_max_axis1(x)
         shifted = np.where(np.isneginf(x), x, x - max_vals)
 
@@ -236,15 +207,63 @@ class Softmax(Layer):
 
     def backward(self, grad):
         '''
-        Returns gradient with respect to z_l from forward pass
-        '''
-        P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
-        
-        S = P / (Q * Q + self.epsilon)
+        Returns gradient with respect to z_l from forward pass.
 
+        '''
+
+        P, Q, z_l = self.prev_P, self.prev_Q, self.prev_z_l
+        S = P / (Q * Q + self.epsilon)
         dL_dz = grad * z_l - np.sum(grad * S, axis=1)[:, None, :] * P
         
         return dL_dz
+    
+
+@jitclass([
+    ('prev_A', nb.optional(nb.float64[:, :, :])),
+    ('prev_B', nb.optional(nb.float64[:, :, :])),
+])
+class Matmul(Layer):
+    '''
+    Matrix multiplication layer.
+
+    '''
+    def __init__(self):
+        self.prev_A: np.ndarray | None = None
+        self.prev_B: np.ndarray | None = None
+    
+    def forward(self, A, B):
+        '''
+        Computes matrix product of two input matrices.
+
+        '''
+        self.prev_A = A
+        self.prev_B = B
+
+        # Standard:
+        # return A @ B
+
+        assert A.ndim == 3 and B.ndim == 3
+
+        # Numba:
+        return batched_mm(A, B)
+    
+    def backward(self, dL_dAB):
+        '''
+        Takes in one input matrix and computes gradients of loss wrt two matrices.
+
+        '''
+
+        # Standard:
+        # dL_dA = dL_dAB @ self.prev_B.transpose(0, 2, 1)
+        # dL_dB = self.prev_A.transpose(0, 2, 1) @ dL_dAB
+
+        B_T = self.prev_B.transpose(0, 2, 1).copy()
+        A_T = self.prev_A.transpose(0, 2, 1).copy()
+
+        # Numba:
+        dL_dA = batched_mm(dL_dAB, B_T)
+        dL_dB = batched_mm(A_T, dL_dAB)
+        return dL_dA, dL_dB
 
 
 @jitclass([
@@ -254,7 +273,7 @@ class Softmax(Layer):
 ])
 class Attention(Layer):
     ''' 
-    Deciding how much 'attention' that should be put on different parts of the input
+    Deciding how much 'attention' that should be put on different parts of the input.
     
     '''
     def __init__(self):
@@ -263,22 +282,28 @@ class Attention(Layer):
         self.matmul2 = Matmul()
 
     def forward(self, Q, K, V):
+        '''
+        Calculates the attention weighted values, VA.
+
+        Q, K, V: (b, k, n)
+
+        '''
+
         # queries, keys, values
-        # søkeverdi, sammenligningsverdi, verdi
-        # For every query, compare to all keys, and take from the corresponding value
         b, k, n = Q.shape
+
+        # Make D matrix
+        # D: (1, n, n)
         D = make_D_matrix(n)
 
-        # Q = Q.transpose(0, 2, 1)
-        # Q, K, V: (b, k, n)
-        # D: (1, n, n)
-        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1).copy(), K)
         # qk_prod: (b, n_in, n_out)
+        qk_prod = self.matmul1.forward(Q.transpose(0, 2, 1).copy(), K)
 
+        # Masking
         masked = qk_prod + D
 
+        # Using softmax
         A = self.softmax.forward(masked)
-        # A = self.softmax.forward(qk_prod)
 
         VA = self.matmul2.forward(V, A)
 
@@ -286,7 +311,7 @@ class Attention(Layer):
     
     def backward(self, dL_dVA):
         '''
-        Calculates the loss gradient with respect to Q, K and V
+        Calculates the loss gradient with respect to Q, K and V.
         '''
         dL_dV, dL_dA = self.matmul2.backward(dL_dVA)
 
@@ -322,8 +347,10 @@ class SelfAttention(Layer):
 
     def forward(self, z):
         '''
-        Forward pass uses linear layers and attention together
+        Combines LinearLayer's and Attention's forward pass.
+
         '''
+
         b, k, n = z.shape
 
         Q = self.W_q.forward(z) # (b, k, n)
@@ -338,7 +365,8 @@ class SelfAttention(Layer):
 
     def backward(self, grad):
         '''
-        Calculates the loss gradient with respect to several layers
+        Calculates the loss gradient wrt the original input z.
+
         '''
         dL_dVA = self.W_o.backward(grad)  # (b, k, n)
 
@@ -350,8 +378,10 @@ class SelfAttention(Layer):
     
     def step_gd(self, optimizer):
         '''
-        gradien descent on all linear layers 
+        Performs a gradient descent step on all linear layers.
+
         '''
+
         self.W_q.step_gd(optimizer)
         self.W_k.step_gd(optimizer)
         self.W_v.step_gd(optimizer)
@@ -365,7 +395,8 @@ class SelfAttention(Layer):
 ])
 class CrossEntropy(Layer):
     '''
-    Evaluates the error between the model's predictions and the actual results
+    Evaluates the error between the model's predictions and the desired results.
+
     '''
     def __init__(self, epsilon = 10e-18):
         self.epsilon = epsilon
@@ -373,17 +404,22 @@ class CrossEntropy(Layer):
         self.prev_y: np.ndarray | None = None
         
     def forward(self, y_pred: np.ndarray, y_true: np.ndarray):
-        # y_pred: (batch, m, n)
-        # y_true: (batch, m, n)
-        # m = number of classes
+        '''
+        Computes loss per sequence.
+
+        y_pred: (batch, m, n)
+        y_true: (batch, m, n)
+
+        m = number of classes
+        out: (batch,)
+
+        '''
 
         self.prev_y_pred = y_pred
         self.prev_y = y_true
 
-        # out: (batch,)
-
-        # per_token_loss: (batch, n)
         # This is faster with numba than numpy
+        # per_token_loss: (batch, n)
         per_token_loss = np.zeros((y_pred.shape[0], y_pred.shape[2]))
 
         for batch_index in range(y_pred.shape[0]):
@@ -395,7 +431,6 @@ class CrossEntropy(Layer):
         # per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
         
         # per_sequence_loss: (batch,)
-
         per_sequence_loss = np.zeros((y_pred.shape[0],))
         for b in range(y_pred.shape[0]):
             per_sequence_loss[b] = per_token_loss[b, :].mean()
@@ -405,7 +440,10 @@ class CrossEntropy(Layer):
 
     def backward(self):
         '''
-        calculates the gradient
+        Calculates the gradient of loss wrt y_pred.
+        
+        y_pred: (batch, m, n)
+
         '''
         b, m, n = self.prev_y_pred.shape
 
@@ -420,18 +458,20 @@ class CrossEntropy(Layer):
 class Relu(Layer):
     '''
     Relu activation function. Makes system non-linear.
+
     '''
 
     def __init__(self):
         pass
 
     def relu(self,x):
-        #relu(x) = max(0,x)
+        # relu(x) = max(0,x)
         return np.maximum(0, x)
 
     def forward(self,x):
         '''
-        Store input for backwards pass
+        Stores input for backwards pass.
+
         '''
 
         self.x = x
@@ -440,6 +480,7 @@ class Relu(Layer):
     def backward(self,grad):
         '''
         dL/dx = grad * relu'(x)
+
         '''
         return grad * np.where(self.x > 0, np.ones_like(self.x), np.zeros_like(self.x))
 
