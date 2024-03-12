@@ -20,7 +20,7 @@ def make_model( r: int = 5, d: int =10, m: int =2, L: int =5, p: int = 128, k: i
     return model
 
 
-def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set, m, r, n_epochs=300):
+def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set, m, n_epochs=300):
     '''
     Training on sorting integers in batches with the neural network.
 
