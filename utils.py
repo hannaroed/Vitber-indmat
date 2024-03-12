@@ -2,24 +2,23 @@ import numpy as np
 from numba import njit
 import numba as nb
 
-#hei
-
+# Original:
 
 def onehot(x,m):
-    """ 
+    '''
     Input:
     - x : np.array of integers with shape (b,n)
-             b is the batch size and 
-             n is the number of elements in the sequence
-    - m : integer, number of elements in the vocabulary 
-                such that x[i,j] <= m-1 for all i,j
+            b is batch size and 
+            n is the number of elements in the sequence
+    - m : number of digits
+            such that x[i,j] <= m-1 for all i,j
 
     Output:     
     - x_one_hot : np.array of one-hot encoded integers with shape (b,m,n)
 
-                    x[i,j,k] = 1 if x[i,j] = k, else 0 
-                    for all i,j
-    """
+            x[i,j,k] = 1 if x[i,j] = k, else 0 
+            for all i,j
+    '''
     b, n = x.shape
 
     #Making sure that x is an array of integers
@@ -32,6 +31,7 @@ def onehot(x,m):
 def numba_max_axis1(a):
     '''
     Finds the maximum value of each row in a 3D matrix.
+
     '''
     # Keeps dims
     assert a.ndim == 3
@@ -44,6 +44,7 @@ def numba_max_axis1(a):
 def numba_mean_axis0(a):
     '''
     Finds the mean of each colomn in a 3D matrix.
+
     '''
     # Reduces dims
     assert a.ndim == 3
@@ -56,6 +57,7 @@ def numba_mean_axis0(a):
 def numba_mean_axis1(a):
     '''
     Finds the mean of each row in a 3D matrix.
+
     '''
     # Reduces dims
     running = np.zeros((a.shape[0],))
@@ -63,10 +65,13 @@ def numba_mean_axis1(a):
         running += a[:, i]
     return running / a.shape[1]
 
+
+# Implementing a adjusted onehot so it compiles with numba
+# Numba:
 @njit
 def _jit_onehot(x, m):
     '''
-    Onehot function that can be used with numba.
+
     '''
     b, n = x.shape
     x_one_hot = np.zeros((b, m, n))
@@ -76,6 +81,10 @@ def _jit_onehot(x, m):
     return x_one_hot
 
 def jit_onehot(x, m):
+    '''
+    njit onehot fuction
+    
+    '''
     x = x.astype(np.int64)
     return _jit_onehot(x, m)
 
@@ -84,6 +93,7 @@ def jit_onehot(x, m):
 def numba_mean_bias(grad_bias):
     '''
     Calculates the mean bias of a three dimensional numpy array.
+
     '''
     out = np.zeros(grad_bias.shape[1])
     for i in range(grad_bias.shape[0]):
@@ -95,7 +105,8 @@ def numba_mean_bias(grad_bias):
 @njit
 def make_D_matrix(n):
     '''
-    Lower triangular matrix, with -inf under the diagonal, an zeros above
+    Lower triangular matrix, with -inf under the diagonal, and zeros on the diagonal and above.
+
     '''
     D = np.zeros((n, n))
     i1, i2 = np.tril_indices(n, -1)
@@ -103,24 +114,16 @@ def make_D_matrix(n):
         D[i, j] = -np.inf
     return D[None, :, :]
 
-# @njit(inline='always')
-# def double_batched_mm(A, B):
-#     ab, ao, ai = A.shape
-#     bb, bi, bo = B.shape
-#     assert ai == bi
-#     assert ab == bb
-#     out = np.zeros((ab, ao, bo))
-#     for i in range(ab):
-#         out[i] = A[i] @ B[i]
-#     return out
+
 
 @njit(parallel=True)
 def batched_mm(A, B):
     '''
-    A more efficient way to do matrix multiplication than @
-    Either A or B or both can have a batch dimension so we have 4 different scenarios
+    More efficient way to do matrix multiplication than @.
+    Either A or B or both can have a batch dimension.
 
     '''
+
     if A.ndim == 3 and B.ndim == 3:
         ab, ao, ai = A.shape
         bb, bi, bo = B.shape
@@ -148,4 +151,4 @@ def batched_mm(A, B):
         return out
     if A.ndim == 2 and B.ndim == 2:
         return A @ B
-    raise ValueError("Invalid dimensions")
+    raise ValueError('Invalid dimensions')

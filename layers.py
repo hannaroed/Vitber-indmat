@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy as np
-from utils import *
+from utils import*
 from math import sqrt
 import numba as nb
 from numba.experimental import jitclass
@@ -25,7 +25,7 @@ class Layer:
         '''
         Performs a gradient descent step given an optimizer with a learning rate.
 
-        Assumes that the layer has a parameter dictionary "params" on the form
+        Assumes that the layer has a parameter dictionary "params" on the form:
 
         params = {
             'w1': {
@@ -92,8 +92,8 @@ class LinearLayer(Layer):
         Computes the affine transformation of the forward pass.
         Stores input for backwards pass and returns output of layer, y = Wx.
 
-        x: input, array of shape (batch_size, input_size, n) = (b,d,n)
-        y: output, array of shape (batch_size, output_size, n) = (b,o,n)
+        x: input, array of shape (batch_size, input_size, n) = (b,d,n).
+        y: output, array of shape (batch_size, output_size, n) = (b,o,n).
 
         '''
 
@@ -182,7 +182,7 @@ class Softmax(Layer):
         '''
         Columnwise softmax operation.
 
-        x: input, (batch, d, n)
+        x: input, (batch, d, n).
         
         '''
         
@@ -285,7 +285,7 @@ class Attention(Layer):
         '''
         Calculates the attention weighted values, VA.
 
-        Q, K, V: (b, k, n)
+        Q, K, V: (b, k, n).
 
         '''
 
@@ -312,6 +312,7 @@ class Attention(Layer):
     def backward(self, dL_dVA):
         '''
         Calculates the loss gradient with respect to Q, K and V.
+
         '''
         dL_dV, dL_dA = self.matmul2.backward(dL_dVA)
 
@@ -333,7 +334,8 @@ class Attention(Layer):
 ])
 class SelfAttention(Layer):
     '''
-    Combines our linear layers with attention 
+    Combines our linear layers with attention.
+
     '''
     def __init__(self, d, k):
         self.W_q = LinearLayer(d, k, True, 0.1)
@@ -407,10 +409,10 @@ class CrossEntropy(Layer):
         '''
         Computes loss per sequence.
 
-        y_pred: (batch, m, n)
-        y_true: (batch, m, n)
+        y_pred: (batch, m, n).
+        y_true: (batch, m, n).
 
-        m = number of classes
+        m = number of digits.
         out: (batch,)
 
         '''
@@ -442,7 +444,7 @@ class CrossEntropy(Layer):
         '''
         Calculates the gradient of loss wrt y_pred.
         
-        y_pred: (batch, m, n)
+        y_pred: (batch, m, n).
 
         '''
         b, m, n = self.prev_y_pred.shape
@@ -479,7 +481,7 @@ class Relu(Layer):
 
     def backward(self,grad):
         '''
-        dL/dx = grad * relu'(x)
+        dL/dx = grad * relu'(x).
 
         '''
         return grad * np.where(self.x > 0, np.ones_like(self.x), np.zeros_like(self.x))
@@ -492,23 +494,22 @@ class Relu(Layer):
 ])
 class EmbedPosition(Layer):
     '''
-    Embedding and positioning layer.
-
-    First layer, input X = onehot(x)
+    Initializes an embedding layer and a positional encoding matrix.
 
     '''
 
     def __init__(self, n_max, m, d, init_scale=1e-1):   
 
         '''
-        n_max: maximum length of input sequence
-        m: number of items in the vocabulary / number of integers
-        d: embedding dimension
+        n_max: maximum length of input sequence.
+        m: number of digits.
+        d: embedding dimension.
 
         '''
 
         # Initialize a linear layer for the embedding
         self.embed = LinearLayer(m,d,False,init_scale)
+
         # Initialize the position embedding matrix
         self.w = np.random.randn(d,n_max) * init_scale
 
@@ -528,11 +529,10 @@ class EmbedPosition(Layer):
         Output:
             z_0: array of shape (b,d,n)
 
-        embed.forward(X) maps (b,m,n) to (b,d,n). 
         Assigns a column of size d to each integer in the sequence
         and add positional embedding matrix (params['Wp']['w'][:,:n]) (b,d,n).
 
-        Equivalent to 
+        Equivalent to:
 
         z_0 = W_E@X + W_P[:,:n]
 
@@ -545,24 +545,24 @@ class EmbedPosition(Layer):
     
     def backward(self, grad):
         '''
-        Does not return anything since it is the first layer
+        
         Input:
             - grad of shape (b,d,n)
 
+        Does not return anything since it is the first layer.
         Output:
             - None
         '''
 
         b = grad.shape[0]
 
-        #Compute gradient (average over B batches) of loss wrt positional embedding w:
+        #Compute gradient (average over B batches) of loss wrt positional embedding w
         self.params['Wp']['d'] = np.zeros_like(self.w)
         self.params['Wp']['d'] += np.sum(grad, axis=0) / b
 
         # Use backwards pass of the linear layer
         self.embed.backward(grad)
 
-        # This is always the final layer, so we return None
         return None
     
     def step_gd(self, optimizer):
@@ -586,12 +586,13 @@ class EmbedPosition(Layer):
 ])
 class FeedForward(Layer):
     '''
-    Consists of linear layers and relu
+    Consists of linear layers and relu.
+
     '''
     def __init__(self, d, p, init_scale = 0.1):
         '''
         Input:
-            d: input dimension of first layer and output of second
+            d: input dimension of first layer and output of second.
             p: output dimension of first and input of second.
 
         '''
@@ -614,10 +615,11 @@ class FeedForward(Layer):
         Output:
             - shape (b,d,n)
 
-        This is equivalent to
-        y = x + W2.T@Relu(W1@x)
+        This is equivalent to:
+            y = x + W2.T@Relu(W1@x)
+            
+            (W1,W2 are p x d)
 
-         (W1,W2 are p x d)
         '''
 
         self.x = x
@@ -631,15 +633,15 @@ class FeedForward(Layer):
     def backward(self, grad):
         '''
         Input:
-            - grad of shape (b,d,n)
+            - grad of shape (b,d,n).
 
         Output:
-            - derivative of loss wrt input x. Shape (b,d,n)
+            - derivative of loss wrt input x, shape (b,d,n).
         
         '''
 
-        # We use backward pass of the linear layers and activation.
-        # Recall that the backward pass reverse the order of the layers. 
+        # We use backward pass of the linear layers and activation
+        # Recall that the backward pass reverse the order of the layers
         grad_feed_forward = self.l1.backward(self.activation.backward(self.l2.backward(grad)))
 
         # Since forward pass is x + W2.T@Relu(W1@x)
@@ -658,7 +660,8 @@ class FeedForward(Layer):
 ])
 class TransformerBlock(Layer):
     '''
-    Combines SelfAttention and FeedForward
+    Combines SelfAttention and FeedForward in one layer.
+
     '''
 
     def __init__(self, d, k, p):
@@ -667,15 +670,19 @@ class TransformerBlock(Layer):
     
     def forward(self, z):
         '''
-        Combines forward pass from both SelfAttention and FeedForward
+        Combines forward pass from both SelfAttention and FeedForward.
+
         '''
         z_l_half = self.self_attention.forward(z) + z
-        z_l = self.feed_forward.forward(z_l_half) # has resnet connection
+
+        # Has resnet connection
+        z_l = self.feed_forward.forward(z_l_half) 
         return z_l
 
     def backward(self, grad):
         '''
-        Returns the gradient by combinding backward from FeedForward and SelfAttention
+        Returns the gradient by combinding backward from FeedForward and SelfAttention.
+
         '''
         dL_dz_half = self.feed_forward.backward(grad)
         grad = self.self_attention.backward(dL_dz_half) + dL_dz_half
@@ -683,7 +690,8 @@ class TransformerBlock(Layer):
 
     def step_gd(self, optimizer: Optimizer):
         '''
-        Calling step_gd for its children
+        Calling step_gd for its children classes.
+
         '''
         self.self_attention.step_gd(optimizer)
         self.feed_forward.step_gd(optimizer)

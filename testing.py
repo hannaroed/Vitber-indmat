@@ -1,6 +1,5 @@
 from neural_network import NeuralNetwork
-from layers import jit_onehot
-from utils import onehot
+from utils import jit_onehot
 import numpy as np
 from tqdm.auto import trange
 

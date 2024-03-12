@@ -11,23 +11,29 @@ transformer_block_type = TransformerBlock.class_type.instance_type
 ])
 class NeuralNetwork: 
     ''' 
-    Neural network class that takes a list of layers
-    and performs forward and backward pass, as well
-    as gradient descent step.
+    Neural network class that combine layers for Embedding, Transformerblock, LinearLayer and Softmax.
+    Performs forward and backward pass, as well as gradient descent step.
+
     '''
 
     def __init__(self, r: int = 5, d: int = 10, m: int = 2, L: int = 5, p: int = 128, k: int = 8):
-        #layers is a list where each element is of the Layer class
+
+        
         n_max = 2 * r - 1
         self.embedding = EmbedPosition(n_max, m, d, 0.1)
         self.transformer_blocks = [TransformerBlock(d, k, p)]
         for _ in range(L - 1):
             self.transformer_blocks.append(TransformerBlock(d, k, p))
-        
-        self.lm_head = LinearLayer(d, m, True, 0.1)  # Unembedding
+
+        # Unembedding
+        self.lm_head = LinearLayer(d, m, True, 0.1)  
         self.out_softmax = Softmax(1e-8)
     
     def forward(self, x):
+        '''
+        Performs forward pass through the network.
+
+        '''
         x = self.embedding.forward(x)
         for block in self.transformer_blocks:
             x = block.forward(x)
@@ -37,9 +43,9 @@ class NeuralNetwork:
     
     def backward(self, grad):
         """
-        Iteratively perform backward pass 
-        from grad : derivative of the loss wrt 
-        the final output from the forward pass.
+        Perform backward pass through the network.
+        From grad : derivative of the loss wrt the final output from the forward pass.
+
         """
         dL_dx = self.out_softmax.backward(grad)
         dL_dx = self.lm_head.backward(dL_dx)
@@ -52,6 +58,7 @@ class NeuralNetwork:
         """
         Perform a gradient descent step for each layer.
         """
+
         self.embedding.step_gd(optimizer)
         for block in self.transformer_blocks:
             block.step_gd(optimizer)
