@@ -1,7 +1,6 @@
 import numpy as np
 
 
-
 def get_xy_sort(length,num_ints=3):
     """
     Returns a pair of input and output for a sorting problem
@@ -165,7 +164,6 @@ def get_train_test_addition(n_digit,samples_per_batch = 1000,n_batches_train = 3
     #and we only select c from y_test (and reverse it)
     data['y_test'] = y_test[:,:,::-1]
     return data
-
 
 
 def text_to_training_data(n_max, text_string,num_batches=64,batch_size=100):
