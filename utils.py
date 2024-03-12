@@ -2,8 +2,7 @@ import numpy as np
 from numba import njit
 import numba as nb
 
-# Original:
-
+# Original onehot function:
 def onehot(x,m):
     '''
     Input:
@@ -19,9 +18,10 @@ def onehot(x,m):
             x[i,j,k] = 1 if x[i,j] = k, else 0 
             for all i,j
     '''
+
     b, n = x.shape
 
-    #Making sure that x is an array of integers
+    # Making sure that x is an array of integers
     x = x.astype(int)
     x_one_hot = np.zeros((b, m, n))
     x_one_hot[np.arange(b)[:,None],x,np.arange(n)[None,:]] = 1
@@ -33,6 +33,7 @@ def numba_max_axis1(a):
     Finds the maximum value of each row in a 3D matrix.
 
     '''
+
     # Keeps dims
     assert a.ndim == 3
     running = np.zeros((a.shape[0], 1, a.shape[2]))
@@ -46,6 +47,7 @@ def numba_mean_axis0(a):
     Finds the mean of each colomn in a 3D matrix.
 
     '''
+
     # Reduces dims
     assert a.ndim == 3
     running = np.zeros((a.shape[1], a.shape[2]))
@@ -59,6 +61,7 @@ def numba_mean_axis1(a):
     Finds the mean of each row in a 3D matrix.
 
     '''
+
     # Reduces dims
     running = np.zeros((a.shape[0],))
     for i in range(a.shape[1]):
@@ -66,13 +69,10 @@ def numba_mean_axis1(a):
     return running / a.shape[1]
 
 
-# Implementing a adjusted onehot so it compiles with numba
-# Numba:
+# Onehot function with numba:
 @njit
 def _jit_onehot(x, m):
-    '''
 
-    '''
     b, n = x.shape
     x_one_hot = np.zeros((b, m, n))
     for i in range(b):
@@ -82,7 +82,7 @@ def _jit_onehot(x, m):
 
 def jit_onehot(x, m):
     '''
-    njit onehot fuction
+    Onehot fuction with numba.
     
     '''
     x = x.astype(np.int64)
@@ -92,7 +92,7 @@ def jit_onehot(x, m):
 @njit(inline='always')
 def numba_mean_bias(grad_bias):
     '''
-    Calculates the mean bias of a three dimensional numpy array.
+    Calculates the mean bias of a 3D matrix.
 
     '''
     out = np.zeros(grad_bias.shape[1])
@@ -108,12 +108,12 @@ def make_D_matrix(n):
     Lower triangular matrix, with -inf under the diagonal, and zeros on the diagonal and above.
 
     '''
+
     D = np.zeros((n, n))
     i1, i2 = np.tril_indices(n, -1)
     for i, j in zip(i1, i2):
         D[i, j] = -np.inf
     return D[None, :, :]
-
 
 
 @njit(parallel=True)
