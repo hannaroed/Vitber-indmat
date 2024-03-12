@@ -39,7 +39,7 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
             x = x_train[batch_idx]
             y_true = y_train[batch_idx]
 
-            # takeing one hot and padding the y_true so it can compare with y_pred in loss function
+            # takeing one hot and padding the y_true so it can compare with y_pred in our loss function
             Y_true = jit_onehot(y_true, m)
             Y_true_pad = np.pad(Y_true, ((0, 0), (0, 0), (x.shape[1] - Y_true.shape[2], 0)))
 
@@ -86,25 +86,32 @@ def training_addition(model: NeuralNetwork, loss_function: CrossEntropy, optimiz
             x = x_train[batch_idx]
             y_true = y_train[batch_idx]
 
+            # taking one hot of y_true so it can compare with y_pred
             Y_true = jit_onehot(y_true, m)
 
+            # slicing Y_pred to the same shape as Y_true
             X = jit_onehot(x, m)
             Y_pred = model.forward(X)
             Y_pred_slice = Y_pred[:,:,-Y_true.shape[2]:]
 
+            # padding Y_true so it can compare with y_pred in our loss function
             Y_true_pad = np.pad(Y_true, ((0, 0), (0, 0), (Y_pred.shape[2] - Y_true.shape[2], 0)))
 
             correct += np.sum(np.argmax(Y_pred_slice, axis=1) == y_true)
             total += y_true.size
 
+            # computing the loss
             loss = loss_function.forward(Y_pred, Y_true_pad)
             dL_dY = loss_function.backward()
 
             model.backward(dL_dY)
             model.step_gd(optimizer)
 
+        # finding the mean loss
         mean_loss = np.mean(loss)
         mean_loss_arr[epoch] = mean_loss
+
+        # progress bar
         pbar.set_postfix({'loss': mean_loss, 'accuracy': correct / total})
 
     return model, mean_loss_arr
