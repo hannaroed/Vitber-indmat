@@ -42,7 +42,8 @@ class Layer:
         '''
         if not hasattr(self, 'params'):
             return
-
+        
+        # Updates parameters
         for param in self.params.values():
             optimizer.update(param)
 
@@ -64,7 +65,7 @@ class LinearLayer(Layer):
     '''
     def __init__(self, input_size, output_size, has_bias, init_scale = 0.1):
 
-        # Initialize weights using a sample from the normal distribution scaled with the init_scale
+        # Initializing weights using a sample from the normal distribution scaled with the init_scale
         w = np.random.randn(output_size,input_size)*init_scale
 
         # Making dictionary for storage of parameters
@@ -139,7 +140,7 @@ class LinearLayer(Layer):
         x_mean = np.sum(self.x, axis=0) / b
         self.params['w']['d'] = grad_mean @ x_mean.T
 
-        # Finds mean bias and updates value if has_bias is True
+        # Finds mean bias and updates value if has_bias is set to True
         if self.has_bias:
             self.params['b']['d'] = numba_mean_bias(grad)[:, None]
 
@@ -149,7 +150,7 @@ class LinearLayer(Layer):
         # Original:
         # return np.einsum('od,bon->bdn', self.params['w']['w'], grad)
 
-        # Optimized:
+        # Efficient:
         # out = self.params['w']['w'].T @ grad
 
         # Numba:
@@ -182,7 +183,8 @@ class Softmax(Layer):
         '''
         Columnwise softmax operation.
 
-        x: input, (batch, d, n).
+        x: input, (batch, d, n)
+        z_l: output, (batch, d, n)
         
         '''
         
@@ -207,7 +209,7 @@ class Softmax(Layer):
 
     def backward(self, grad):
         '''
-        Returns gradient with respect to z_l from forward pass.
+        Returns gradient of loss with respect to z_l from forward pass.
 
         '''
 
@@ -224,7 +226,7 @@ class Softmax(Layer):
 ])
 class Matmul(Layer):
     '''
-    Matrix multiplication layer.
+    Matrix multiplication layer. 
 
     '''
     def __init__(self):
@@ -263,6 +265,7 @@ class Matmul(Layer):
         # Numba:
         dL_dA = batched_mm(dL_dAB, B_T)
         dL_dB = batched_mm(A_T, dL_dAB)
+        
         return dL_dA, dL_dB
 
 
@@ -285,11 +288,11 @@ class Attention(Layer):
         '''
         Calculates the attention weighted values, VA.
 
-        Q, K, V: (b, k, n).
+        Q, K, V: shape (b, k, n)
+        queries, keys, values
 
         '''
 
-        # queries, keys, values
         b, k, n = Q.shape
 
         # Make D matrix
@@ -370,9 +373,10 @@ class SelfAttention(Layer):
         Calculates the loss gradient wrt the original input z.
 
         '''
-        dL_dVA = self.W_o.backward(grad)  # (b, k, n)
+        
+        dL_dVA = self.W_o.backward(grad) # (b, k, n)
 
-        dL_dQ, dL_dK, dL_dV = self.attention.backward(dL_dVA)  # each (b, k, n)
+        dL_dQ, dL_dK, dL_dV = self.attention.backward(dL_dVA) # each (b, k, n)
 
         dL_dz = self.W_q.backward(dL_dQ) + self.W_k.backward(dL_dK) + self.W_v.backward(dL_dV)
 
@@ -383,7 +387,7 @@ class SelfAttention(Layer):
         Performs a gradient descent step on all linear layers.
 
         '''
-
+        
         self.W_q.step_gd(optimizer)
         self.W_k.step_gd(optimizer)
         self.W_v.step_gd(optimizer)
@@ -409,10 +413,10 @@ class CrossEntropy(Layer):
         '''
         Computes loss per sequence.
 
-        y_pred: (batch, m, n).
-        y_true: (batch, m, n).
+        y_pred: (batch, m, n)
+        y_true: (batch, m, n)
 
-        m = number of digits.
+        m = number of digits
         out: (batch,)
 
         '''
@@ -421,23 +425,20 @@ class CrossEntropy(Layer):
         self.prev_y = y_true
 
         # This is faster with numba than numpy
-        # per_token_loss: (batch, n)
-        per_token_loss = np.zeros((y_pred.shape[0], y_pred.shape[2]))
+        per_token_loss = np.zeros((y_pred.shape[0], y_pred.shape[2])) # (batch, n)
 
         for batch_index in range(y_pred.shape[0]):
             for m in range(y_pred.shape[1]):
                 for seq_index in range(y_pred.shape[2]):
                     yt = y_true[batch_index, m, seq_index]
-                    # checks if it is the padded part of y_true, and if it is we do not add the loss
+                    # Checks if seq_index is part of padded zeros in y_true, and if so we do not add the loss
                     if yt > 0.0:
                         per_token_loss[batch_index, seq_index] -= yt * np.log(y_pred[batch_index, m, seq_index] + self.epsilon)
-        # per_token_loss = -np.log(y_pred[batch_index, y_true, seq_index] + self.epsilon)
-        
-        # per_sequence_loss: (batch,)
-        per_sequence_loss = np.zeros((y_pred.shape[0],))
+         
+        per_sequence_loss = np.zeros((y_pred.shape[0],)) # (batch,)
+        # Adding our values to per_sequence_loss
         for b in range(y_pred.shape[0]):
             per_sequence_loss[b] = per_token_loss[b, :].mean()
-        # per_sequence_loss = per_token_loss.mean(axis=1)
 
         return per_sequence_loss
 
@@ -445,9 +446,10 @@ class CrossEntropy(Layer):
         '''
         Calculates the gradient of loss wrt y_pred.
         
-        y_pred: (batch, m, n).
+        y_pred: (batch, m, n)
 
         '''
+        
         b, m, n = self.prev_y_pred.shape
 
         out = - 1/n * (self.prev_y / (self.prev_y_pred + self.epsilon))
@@ -485,6 +487,7 @@ class Relu(Layer):
         dL/dx = grad * relu'(x).
 
         '''
+        
         return grad * np.where(self.x > 0, np.ones_like(self.x), np.zeros_like(self.x))
 
 
@@ -522,7 +525,6 @@ class EmbedPosition(Layer):
         # self.params = {"Wp": {'w':self.w, 'd':None}}
 
     def forward(self, X):
-
         '''
         Input:
             X: one-hot encoded array of shape (b,m,n)
@@ -546,7 +548,6 @@ class EmbedPosition(Layer):
     
     def backward(self, grad):
         '''
-        
         Input:
             - grad of shape (b,d,n)
 
@@ -561,7 +562,7 @@ class EmbedPosition(Layer):
         self.params['Wp']['d'] = np.zeros_like(self.w)
         self.params['Wp']['d'] += np.sum(grad, axis=0) / b
 
-        # Use backwards pass of the linear layer
+        # Use backward pass of the linear layer
         self.embed.backward(grad)
 
         return None
@@ -681,7 +682,7 @@ class TransformerBlock(Layer):
 
     def backward(self, grad):
         '''
-        Returns the loss gradient (wrt z) by combinding backward from FeedForward and SelfAttention.
+        Returns the loss gradient (wrt z) by combining backward from FeedForward and SelfAttention.
 
         '''
         dL_dz_half = self.feed_forward.backward(grad)

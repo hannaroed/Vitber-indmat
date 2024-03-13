@@ -33,6 +33,7 @@ class NeuralNetwork:
         Performs forward pass through the network.
 
         '''
+        
         x = self.embedding.forward(x)
         for block in self.transformer_blocks:
             x = block.forward(x)
@@ -46,6 +47,7 @@ class NeuralNetwork:
         From grad calculate derivative of the loss wrt the final output from the forward pass.
 
         '''
+
         dL_dx = self.out_softmax.backward(grad)
         dL_dx = self.lm_head.backward(dL_dx)
         for i in range(len(self.transformer_blocks) - 1, -1, -1):

@@ -5,7 +5,7 @@ from layers import CrossEntropy, jit_onehot
 import numpy as np
 
 
-def make_model( r: int = 5, d: int =10, m: int =2, L: int =5, p: int = 128, k: int = 128) -> NeuralNetwork:
+def make_model( r: int = 5, d: int = 10, m: int = 2, L: int = 5, p: int = 128, k: int = 128) -> NeuralNetwork:
     '''
     r: int, number of elements in the input sequence
     d: int, embedding size
@@ -20,11 +20,13 @@ def make_model( r: int = 5, d: int =10, m: int =2, L: int =5, p: int = 128, k: i
     return model
 
 
-def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set, m, n_epochs=300):
+def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set: dict, m: int, n_epochs: int = 300):
     '''
     Training on sorting integers in batches for a neural network.
 
     '''
+
+    # Getting training data
     x_train, y_train = data_set['x_train'], data_set['y_train']
 
     mean_loss_arr = np.zeros(n_epochs)
@@ -39,22 +41,23 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
             x = x_train[batch_idx]
             y_true = y_train[batch_idx]
 
-            # Taking one hot and padding the y_true so it can compare with y_pred in our loss function
+            # Taking one hot of y_true and padding it so we can compare it with y_pred in our loss function
             Y_true = jit_onehot(y_true, m)
             Y_true_pad = np.pad(Y_true, ((0, 0), (0, 0), (x.shape[1] - Y_true.shape[2], 0)))
 
-            # Comparing y_true with a sliced y_pred
             X = jit_onehot(x, m)
             Y_pred = model.forward(X)
             Y_pred_slice = Y_pred[:, :, -Y_true.shape[2]:]
+
+            # Summing up correct guesses by comparing y_true with a sliced Y_pred     
             correct += np.sum(np.argmax(Y_pred_slice, axis=1) == y_true)
 
             total += y_true.size
 
             # Computing the loss
             loss = loss_function.forward(Y_pred, Y_true_pad)
-            dL_dY = loss_function.backward()
 
+            dL_dY = loss_function.backward()
             model.backward(dL_dY)
             model.step_gd(optimizer)
 
@@ -62,18 +65,21 @@ def training_sorting(model: NeuralNetwork, loss_function: CrossEntropy, optimize
         mean_loss = np.mean(loss)
         mean_loss_arr[epoch] = mean_loss
 
-        # Progress bar
+        # Progress bar with current mean of loss and accuracy
         pbar.set_postfix({'loss': mean_loss, 'accuracy': correct / total})
 
     return model, mean_loss_arr
 
-def training_addition(model: NeuralNetwork, loss_function: CrossEntropy, optimizer, data_set, m, n_epochs=300, r: int = 2):
+
+def training_addition(model: NeuralNetwork, loss_function: CrossEntropy, optimizer: Adam, data_set: dict, m: int, n_epochs: int = 300):
     '''
     Training on addition in batches for a neural network.
 
     '''
-
+    
+    # Getting training data
     x_train, y_train = data_set['x_train'], data_set['y_train']
+
     mean_loss_arr = np.zeros(n_epochs)
 
     # Making progress bar
@@ -82,28 +88,28 @@ def training_addition(model: NeuralNetwork, loss_function: CrossEntropy, optimiz
     for epoch in pbar:
         correct = 0
         total = 0
-        for batch_idx in range(x_train.shape[0]):
+        for batch_idx in range(x_train.shape[0]):   
             x = x_train[batch_idx]
             y_true = y_train[batch_idx]
-
-            # Taking one hot of y_true so it can compare with y_pred
+                      
             Y_true = jit_onehot(y_true, m)
-
-            # Slicing Y_pred to the same shape as Y_true
             X = jit_onehot(x, m)
             Y_pred = model.forward(X)
+            
+            # Slicing our prediction to count correct guesses
             Y_pred_slice = Y_pred[:,:,-Y_true.shape[2]:]
 
-            # Padding Y_true so it can compare with y_pred in our loss function
+            # Padding Y_true so we can compare it with Y_pred in our loss function
             Y_true_pad = np.pad(Y_true, ((0, 0), (0, 0), (Y_pred.shape[2] - Y_true.shape[2], 0)))
-
+            
+            # Comparing y_true with a sliced Y_pred     
             correct += np.sum(np.argmax(Y_pred_slice, axis=1) == y_true)
             total += y_true.size
 
             # Computing the loss
             loss = loss_function.forward(Y_pred, Y_true_pad)
-            dL_dY = loss_function.backward()
 
+            dL_dY = loss_function.backward()
             model.backward(dL_dY)
             model.step_gd(optimizer)
 
@@ -111,7 +117,7 @@ def training_addition(model: NeuralNetwork, loss_function: CrossEntropy, optimiz
         mean_loss = np.mean(loss)
         mean_loss_arr[epoch] = mean_loss
 
-        # Progress bar
+        # Progress bar with current mean of loss and accuracy
         pbar.set_postfix({'loss': mean_loss, 'accuracy': correct / total})
 
     return model, mean_loss_arr

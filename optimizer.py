@@ -36,7 +36,8 @@ class Adam(Optimizer):
     
     def update(self, parameter: dict[str, np.ndarray]):
         '''
-        Takes in gradients, parameters, and previous moments and returns the update step and both.
+        Takes in gradients, weights, and previous momentums.
+        Updates the parameters.
 
         '''
         w, grad, m_prev, v_prev = parameter['w'], parameter['d'], parameter.get('m', None), parameter.get('v', None)
@@ -58,5 +59,3 @@ class Adam(Optimizer):
         parameter['w'] -= step
         parameter['m'] = m
         parameter['v'] = v
-
-       

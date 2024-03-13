@@ -14,7 +14,6 @@ def onehot(x,m):
 
     Output:     
     - x_one_hot : np.array of one-hot encoded integers with shape (b,m,n)
-
             x[i,j,k] = 1 if x[i,j] = k, else 0 
             for all i,j
     '''
@@ -44,7 +43,7 @@ def numba_max_axis1(a):
 @njit(inline='always')
 def numba_mean_axis0(a):
     '''
-    Finds the mean of each colomn in a 3D matrix.
+    Finds the mean of each column in a 3D matrix.
 
     '''
 
@@ -72,7 +71,6 @@ def numba_mean_axis1(a):
 # Onehot function with numba:
 @njit
 def _jit_onehot(x, m):
-
     b, n = x.shape
     x_one_hot = np.zeros((b, m, n))
     for i in range(b):
@@ -119,7 +117,7 @@ def make_D_matrix(n):
 @njit(parallel=True)
 def batched_mm(A, B):
     '''
-    More efficient way to do matrix multiplication than @.
+    Matrix multiplication for different dimentions that can be compiled with numba.
     Either A or B or both can have a batch dimension.
 
     '''
